@@ -44,19 +44,14 @@
 
   <!-- Konfigurasi Global Aplikasi -->
   <script>
-    // Jika Anda ingin mengaktifkan sinkronisasi Cloud Database (Firebase),
-    // hapus tanda komentar (//) pada baris window.__firebase_config di bawah ini dan masukkan konfigurasi Anda.
-    // Jika dibiarkan seperti ini, aplikasi otomatis menggunakan Penyimpanan Lokal (Local Storage).
-    
-    // window.__firebase_config = JSON.stringify({
-    //   apiKey: "API_KEY_ANDA",
-    //   authDomain: "DOMAIN_ANDA",
-    //   projectId: "ID_PROJECT",
-    //   storageBucket: "BUCKET",
-    //   messagingSenderId: "SENDER_ID",
-    //   appId: "APP_ID"
-    // });
-    
+   const firebaseConfig = {
+      apiKey: "AIzaSyDchti2rfVq-rB60754czqevaOaLD0Sh8k",
+      authDomain: "e-aset-prokopim.firebaseapp.com",
+      projectId: "e-aset-prokopim",
+      storageBucket: "e-aset-prokopim.firebasestorage.app",
+      messagingSenderId: "820518183082",
+      appId: "1:820518183082:web:5fe0054e1dda02648cf0d3"
+    };
     window.__app_id = "e-aset-prokopim";
   </script>
 </head>
@@ -76,14 +71,24 @@
 
     // --- Firebase Setup ---
     import { initializeApp } from 'firebase/app';
-    import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+    import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
     import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
 
-    const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+    let firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+    
+    // Mencegah crash jika pengguna belum mengubah teks "MASUKKAN_..."
+    if (firebaseConfig.apiKey && firebaseConfig.apiKey.includes("MASUKKAN")) {
+      firebaseConfig = {};
+    }
+
     const app = Object.keys(firebaseConfig).length > 0 ? initializeApp(firebaseConfig) : null;
     const auth = app ? getAuth(app) : null;
     const db = app ? getFirestore(app) : null;
     const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+    // --- URL GOOGLE SHEETS API ---
+    // GANTI URL DI BAWAH INI DENGAN URL WEB APP GOOGLE APPS SCRIPT ANDA
+    const GOOGLE_SHEET_URL = "https://script.google.com/macros/s/AKfycbxivUOHGg17vlfn0oFhRHroSH8bnzYIAIfCOOLddnlhT6NNC6xzmBoIClQ5ta-g1TiyGg/exec"; 
 
     // --- Components ---
     const Button = ({ children, onClick, variant = 'primary', className = '', type = 'button', disabled = false }) => {
@@ -167,21 +172,43 @@
       </div>
     );
 
+    // --- Custom Hooks ---
+    const useLocalStorage = (key, initialValue) => {
+      const [value, setValue] = useState(() => {
+        try {
+          const item = window.localStorage.getItem(key);
+          return item ? JSON.parse(item) : initialValue;
+        } catch (error) {
+          return initialValue;
+        }
+      });
+      useEffect(() => {
+        try { window.localStorage.setItem(key, JSON.stringify(value)); } catch (error) {}
+      }, [key, value]);
+      return [value, setValue];
+    };
+
     // --- Main App ---
     function App() {
-      const [view, setView] = useState('login'); 
+      const [view, setView] = useState('login'); // login, signup, dashboard, etc.
       const [user, setUser] = useState(null);
       const [firebaseUser, setFirebaseUser] = useState(null);
       const [toast, setToast] = useState(null);
       
       const [modalType, setModalType] = useState(null); 
       
+      // App States
       const [pegawai, setPegawai] = useState([]);
       const [barang, setBarang] = useState([]);
       const [ruangan, setRuangan] = useState([]);
       const [persediaan, setPersediaan] = useState([]);
+      
+      // Users Fallback (If Firebase Auth is not used/fails)
+      const [registeredUsers, setRegisteredUsers] = useLocalStorage('easet_registered_users', []);
 
+      // Form States
       const [loginData, setLoginData] = useState({ identifier: '', password: '' });
+      const [signupData, setSignupData] = useState({ nama: '', nip: '', jabatan: '', email: '', password: '' });
       const [newPegawai, setNewPegawai] = useState({ nama: '', jabatan: '', nip: '' });
       
       const initialBarangState = { tahun: new Date().getFullYear().toString(), nama: '', kondisi: 'Baik', status: 'Aktif', pemegang: '', foto: 'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=100' };
@@ -195,21 +222,20 @@
 
       const [stokData, setStokData] = useState({ idBarang: '', jenisTransaksi: 'Penambahan', jumlah: 1 });
 
+      // Firebase Init Listener
       useEffect(() => {
         if (!auth) return;
-        const initAuth = async () => {
-          if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-            await signInWithCustomToken(auth, __initial_auth_token);
-          } else {
-            await signInAnonymously(auth);
+        const unsubscribe = onAuthStateChanged(auth, (u) => {
+          setFirebaseUser(u);
+          if (u && view === 'login') {
+            setUser({ name: u.email });
+            setView('dashboard');
           }
-        };
-        initAuth();
-        
-        const unsubscribe = onAuthStateChanged(auth, setFirebaseUser);
+        });
         return () => unsubscribe();
-      }, []);
+      }, [auth, view]);
 
+      // Firebase Data Fetcher
       useEffect(() => {
         if (!firebaseUser || !db) return;
 
@@ -225,9 +251,7 @@
             if (colName === 'barang') setBarang(data);
             if (colName === 'ruangan') setRuangan(data);
             if (colName === 'persediaan') setPersediaan(data);
-          }, (error) => {
-            console.error(`Error fetching ${colName}:`, error);
-          });
+          }, (error) => console.error(error));
           unsubscribes.push(unsubscribe);
         });
 
@@ -242,7 +266,6 @@
 
       const saveToDb = async (colName, id, data) => {
         if (!firebaseUser || !db) {
-           // Fallback to local state if no DB
            if(colName === 'pegawai') setPegawai(prev => { const idx = prev.findIndex(p => p.id === id); return idx >= 0 ? prev.map(p => p.id === id ? data : p) : [...prev, data] });
            if(colName === 'barang') setBarang(prev => { const idx = prev.findIndex(p => p.id === id); return idx >= 0 ? prev.map(p => p.id === id ? data : p) : [...prev, data] });
            if(colName === 'ruangan') setRuangan(prev => { const idx = prev.findIndex(p => p.id === id); return idx >= 0 ? prev.map(p => p.id === id ? data : p) : [...prev, data] });
@@ -255,7 +278,6 @@
 
       const deleteFromDb = async (colName, id) => {
         if (!firebaseUser || !db) {
-            // Fallback to local state
            if(colName === 'pegawai') setPegawai(prev => prev.filter(p => p.id !== id));
            if(colName === 'barang') setBarang(prev => prev.filter(p => p.id !== id));
            if(colName === 'ruangan') setRuangan(prev => prev.filter(p => p.id !== id));
@@ -266,21 +288,76 @@
         await deleteDoc(docRef);
       };
 
-      // --- Handlers ---
-      const handleLogin = (e) => {
+      // --- Handlers Auth ---
+      const handleLogin = async (e) => {
         e.preventDefault();
-        setUser({ name: loginData.identifier || "Admin Prokopim" });
-        setView('dashboard');
+        try {
+          if (auth) {
+            await signInWithEmailAndPassword(auth, loginData.identifier, loginData.password);
+            // onAuthStateChanged akan menavigasi secara otomatis
+          } else {
+            // Cek lokal
+            const isExist = registeredUsers.find(u => u.email === loginData.identifier && u.password === loginData.password);
+            if (isExist) {
+              setUser({ name: isExist.nama });
+              setView('dashboard');
+            } else {
+              alert("Email atau password salah! Pastikan Anda sudah registrasi.");
+            }
+          }
+        } catch (error) {
+          alert("Gagal masuk: Email atau password salah.");
+        }
       };
 
+      const handleSignup = async (e) => {
+        e.preventDefault();
+        try {
+          // 1. Firebase Auth Registration
+          if (auth) {
+            await createUserWithEmailAndPassword(auth, signupData.email, signupData.password);
+          }
+          
+          // 2. Simpan lokal sebagai backup jika firebase mati
+          setRegisteredUsers([...registeredUsers, signupData]);
+
+          // 3. Kirim data ke Google Sheets
+          if (GOOGLE_SHEET_URL && GOOGLE_SHEET_URL !== "URL_WEB_APP_GOOGLE_SHEET_ANDA") {
+            fetch(GOOGLE_SHEET_URL, {
+              method: 'POST',
+              mode: 'no-cors',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(signupData)
+            }).catch(e => console.log("Google Sheets sync ignored due to missing URL/CORS"));
+          }
+
+          showToast("Registrasi berhasil! Silakan masuk.");
+          setSignupData({ nama: '', nip: '', jabatan: '', email: '', password: '' });
+          
+          if(auth) {
+            signOut(auth); // Sign out otomatis setelah regis agar user login manual
+          }
+          setView('login');
+        } catch (error) {
+          alert("Registrasi Gagal: " + error.message);
+        }
+      };
+
+      const handleLogout = async () => {
+        if (auth) {
+          await signOut(auth);
+        }
+        setUser(null);
+        setView('login');
+      };
+
+      // --- Handlers Data ---
       const handleSavePegawai = async (e) => {
         e.preventDefault();
         const id = newPegawai.id || Date.now().toString();
         const payload = { ...newPegawai, id };
-        
         await saveToDb('pegawai', id, payload);
         showToast(newPegawai.id ? "Data Pegawai Berhasil Diperbarui" : "Data Pegawai Berhasil Ditambahkan");
-        
         setNewPegawai({ nama: '', jabatan: '', nip: '' });
         setModalType(null);
       };
@@ -289,7 +366,6 @@
         e.preventDefault();
         const id = barangData.id || Date.now().toString();
         const payload = { ...barangData, id };
-        
         await saveToDb('barang', id, payload);
         showToast(barangData.id ? "Data Barang Berhasil Diperbarui" : "Data Barang Berhasil Ditambahkan");
         setModalType(null);
@@ -305,17 +381,13 @@
       };
 
       const handleRemoveRuanganItem = (itemId) => {
-        setRuanganData({
-          ...ruanganData,
-          items: (ruanganData.items || []).filter(item => item.id !== itemId)
-        });
+        setRuanganData({ ...ruanganData, items: (ruanganData.items || []).filter(item => item.id !== itemId) });
       };
 
       const handleSaveRuangan = async (e) => {
         e.preventDefault();
         const id = ruanganData.id || Date.now().toString();
         const payload = { ...ruanganData, id };
-        
         await saveToDb('ruangan', id, payload);
         showToast(ruanganData.id ? "Inventaris Ruangan Berhasil Diperbarui" : "Ruangan Baru Berhasil Ditambahkan");
         setModalType(null);
@@ -324,17 +396,12 @@
       const handleSaveStok = async (e) => {
         e.preventDefault();
         if (!stokData.idBarang) return;
-        
         const target = persediaan.find(p => p.id.toString() === stokData.idBarang.toString());
         if (target) {
           const qty = parseInt(stokData.jumlah);
           const payload = { ...target };
-          
-          if (stokData.jenisTransaksi === 'Penambahan') {
-            payload.penambahan += qty;
-          } else {
-            payload.pengeluaran += qty;
-          }
+          if (stokData.jenisTransaksi === 'Penambahan') payload.penambahan += qty;
+          else payload.pengeluaran += qty;
           
           await saveToDb('persediaan', target.id, payload);
           setModalType(null);
@@ -346,24 +413,21 @@
         e.preventDefault();
         const id = persediaanData.id || Date.now().toString();
         const payload = {
-          ...persediaanData,
-          id,
+          ...persediaanData, id,
           saldoAwal: parseInt(persediaanData.saldoAwal) || 0,
           penambahan: parseInt(persediaanData.penambahan) || 0,
           pengeluaran: parseInt(persediaanData.pengeluaran) || 0,
           hargaSatuan: parseInt(persediaanData.hargaSatuan) || 0
         };
-        
         await saveToDb('persediaan', id, payload);
         showToast(persediaanData.id ? "Data Persediaan Berhasil Diperbarui" : "Data Persediaan Berhasil Ditambahkan");
-        
         setPersediaanData(initialPersediaanState);
         setModalType(null);
       };
 
-      const downloadPDF = () => {
-        window.print();
-      };
+      const downloadPDF = () => window.print();
+
+      // --- UI Views ---
 
       if (view === 'login') {
         return (
@@ -373,36 +437,42 @@
                 <div className="w-20 h-20 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
                   <Package className="text-white" size={40} />
                 </div>
-                <h1 className="text-2xl font-bold text-gray-800">E-Aset Prokopim</h1>
-                <p className="text-gray-500 text-sm mt-1">Sistem Informasi Manajemen Aset</p>
-                {auth && db ? (
-                  <div className="mt-4 flex items-center justify-center gap-2 text-xs text-emerald-600 bg-emerald-50 py-2 rounded-lg font-medium">
-                    <Cloud size={14} /> Sinkronisasi Cloud Aktif
-                  </div>
-                ) : (
-                  <div className="mt-4 flex items-center justify-center gap-2 text-xs text-orange-600 bg-orange-50 py-2 rounded-lg font-medium">
-                    <FileText size={14} /> Memori Lokal Sementara
-                  </div>
-                )}
+                <h1 className="text-xl font-bold text-gray-800 leading-snug">E-Aset Prokopim</h1>
+                <p className="text-gray-500 text-sm mt-2 leading-relaxed">Sistem Informasi Aset Bagian Protokol dan Komunikasi Pimpinan</p>
               </div>
               <form onSubmit={handleLogin}>
-                <Input 
-                  label="Email / Username" 
-                  placeholder="admin@prokopim.go.id" 
-                  value={loginData.identifier}
-                  onChange={(val) => setLoginData({...loginData, identifier: val})}
-                  required 
-                />
-                <Input 
-                  label="Password" 
-                  type="password" 
-                  placeholder="••••••••" 
-                  value={loginData.password}
-                  onChange={(val) => setLoginData({...loginData, password: val})}
-                  required 
-                />
-                <Button type="submit" className="w-full mt-2">Masuk ke Aplikasi</Button>
+                <Input label="Email" type="email" placeholder="admin@prokopim.go.id" value={loginData.identifier} onChange={(val) => setLoginData({...loginData, identifier: val})} required />
+                <Input label="Password" type="password" placeholder="••••••••" value={loginData.password} onChange={(val) => setLoginData({...loginData, password: val})} required />
+                <Button type="submit" className="w-full mt-2">Masuk</Button>
               </form>
+              <div className="mt-6 text-center text-sm text-gray-500">
+                Belum punya akun? <button onClick={() => setView('signup')} className="text-blue-600 font-bold hover:underline">Registrasi</button>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      if (view === 'signup') {
+        return (
+          <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+            <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border border-gray-100 max-h-[95vh] overflow-y-auto">
+              <div className="text-center mb-6">
+                <h1 className="text-xl font-bold text-gray-800">Registrasi Akun Baru</h1>
+                <p className="text-gray-500 text-sm mt-1">Sistem Informasi Aset Prokopim</p>
+              </div>
+              <form onSubmit={handleSignup}>
+                <Input label="Nama Lengkap" value={signupData.nama} onChange={(val) => setSignupData({...signupData, nama: val})} required />
+                <Input label="NIP" value={signupData.nip} onChange={(val) => setSignupData({...signupData, nip: val})} required />
+                <Input label="Jabatan" value={signupData.jabatan} onChange={(val) => setSignupData({...signupData, jabatan: val})} required />
+                <Input label="Email Aktif" type="email" placeholder="email@contoh.com" value={signupData.email} onChange={(val) => setSignupData({...signupData, email: val})} required />
+                <Input label="Password" type="password" placeholder="Minimal 6 Karakter" minLength="6" value={signupData.password} onChange={(val) => setSignupData({...signupData, password: val})} required />
+                
+                <Button type="submit" className="w-full mt-4">Daftar Sekarang</Button>
+              </form>
+              <div className="mt-6 text-center text-sm text-gray-500">
+                Sudah punya akun? <button onClick={() => setView('login')} className="text-blue-600 font-bold hover:underline">Masuk</button>
+              </div>
             </div>
           </div>
         );
@@ -429,6 +499,7 @@
             </div>
           )}
 
+          {/* Modals */}
           <Modal isOpen={modalType === 'pegawai'} onClose={() => setModalType(null)} title={newPegawai.id ? "Edit Pegawai" : "Tambah Pegawai Baru"}>
             <form onSubmit={handleSavePegawai}>
               <Input label="Nama Lengkap" value={newPegawai.nama} onChange={(val) => setNewPegawai({...newPegawai, nama: val})} required />
@@ -571,15 +642,11 @@
                   <UserCircle size={24} />
                 </div>
                 <div className="overflow-hidden">
-                  <p className="text-sm font-bold truncate">{user?.name}</p>
-                  {auth && db ? (
-                     <p className="text-xs text-emerald-600 font-medium flex items-center gap-1 mt-1"><Cloud size={12}/> Tersinkronisasi</p>
-                  ) : (
-                     <p className="text-xs text-orange-500 font-medium flex items-center gap-1 mt-1"><FileText size={12}/> Mode Lokal</p>
-                  )}
+                  <p className="text-sm font-bold truncate">{user?.name || "Pegawai"}</p>
+                  <p className="text-xs text-gray-500 font-medium flex items-center gap-1 mt-1">Sistem Aktif</p>
                 </div>
               </div>
-              <button onClick={() => setView('login')} className="w-full flex items-center gap-3 px-4 py-3 text-red-500 hover:bg-red-50 rounded-lg transition-all">
+              <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-3 text-red-500 hover:bg-red-50 rounded-lg transition-all">
                 <LogOut size={20} />
                 <span className="font-medium">Keluar</span>
               </button>
@@ -592,12 +659,8 @@
                 {view === 'dashboard' ? 'Overview Dashboard' : view.replace(/([A-Z])/g, ' $1').trim()}
               </h2>
               <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2 mr-4 px-3 py-1.5 bg-green-50 text-green-700 rounded-full text-xs font-bold border border-green-200">
-                  <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-                  {auth && db ? 'Sinkronisasi Cloud' : 'Data Tersimpan Lokal'}
-                </div>
                 <Button variant="outline" onClick={() => downloadPDF()} className="text-sm h-10">
-                  <Download size={16} /> Unduh PDF
+                  <Download size={16} /> Unduh Laporan PDF
                 </Button>
               </div>
             </header>
@@ -641,7 +704,7 @@
                             <div className="w-2 h-2 bg-blue-500 rounded-full mt-2"></div>
                             <div>
                               <p className="text-sm font-medium">Penambahan Aset Baru: {barang[barang.length-1]?.nama}</p>
-                              <p className="text-xs text-gray-400">Baru saja</p>
+                              <p className="text-xs text-gray-400">Tersimpan di Sistem</p>
                             </div>
                           </div>
                         ) : (
