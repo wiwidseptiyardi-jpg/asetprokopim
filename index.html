@@ -1,37 +1,903 @@
 <!DOCTYPE html>
 <html lang="id">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>E-Aset Prokopim</title>
-    
-    <!-- Meta tags untuk deskripsi aplikasi -->
-    <meta name="description" content="Sistem Informasi Manajemen Aset - Bagian Protokol dan Komunikasi Pimpinan" />
-    <meta name="theme-color" content="#2563eb" /> <!-- Warna biru Tailwind (blue-600) -->
-    
-    <!-- Font Inter (Opsional: direkomendasikan untuk desain UI yang bersih) -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    
-    <style>
-      /* Memastikan font default menggunakan Inter jika dimuat */
-      body {
-        font-family: 'Inter', sans-serif;
-      }
-    </style>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>E-Aset Prokopim</title>
+  
+  <!-- Tailwind CSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Font Inter dari Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- Babel untuk kompilasi JSX langsung di browser -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <!-- Hapus komentar baris di bawah ini jika Anda ingin menggunakan Tailwind CSS via CDN (untuk testing tanpa Node.js/npm) -->
-    <!-- <script src="https://cdn.tailwindcss.com"></script> -->
-  </head>
-  <body>
-    <noscript>Anda perlu mengaktifkan JavaScript untuk menjalankan aplikasi Sistem E-Aset Prokopim.</noscript>
+  <!-- Import Maps untuk dependensi React, Lucide, dan Firebase -->
+  <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.2.0",
+        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+        "lucide-react": "https://esm.sh/lucide-react@0.292.0",
+        "firebase/app": "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js",
+        "firebase/auth": "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js",
+        "firebase/firestore": "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js"
+      }
+    }
+  </script>
+
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    /* Animasi pendukung */
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes zoomIn { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+    @keyframes slideUp { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    .animate-in { animation-duration: 0.2s; animation-fill-mode: forwards; }
+    .fade-in { animation-name: fadeIn; }
+    .zoom-in { animation-name: zoomIn; }
+    .slide-in-from-bottom-5 { animation-name: slideUp; }
+  </style>
+
+  <!-- Konfigurasi Global Aplikasi -->
+  <script>
+    // Jika Anda ingin mengaktifkan sinkronisasi Cloud Database (Firebase),
+    // hapus tanda komentar (//) pada baris window.__firebase_config di bawah ini dan masukkan konfigurasi Anda.
+    // Jika dibiarkan seperti ini, aplikasi otomatis menggunakan Penyimpanan Lokal (Local Storage).
     
-    <!-- Di sinilah seluruh komponen aplikasi React Anda akan di-render (ditampilkan) -->
-    <div id="root"></div>
+    // window.__firebase_config = JSON.stringify({
+    //   apiKey: "API_KEY_ANDA",
+    //   authDomain: "DOMAIN_ANDA",
+    //   projectId: "ID_PROJECT",
+    //   storageBucket: "BUCKET",
+    //   messagingSenderId: "SENDER_ID",
+    //   appId: "APP_ID"
+    // });
     
-    <!-- Script utama (Sangat umum digunakan pada setup Vite React) -->
-    <!-- Catatan: Sesuaikan nama file ini dengan nama entry point proyek Anda (misal: index.js atau main.jsx) -->
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
+    window.__app_id = "e-aset-prokopim";
+  </script>
+</head>
+<body class="bg-gray-50 text-gray-800">
+  
+  <!-- Root elemen untuk React -->
+  <div id="root"></div>
+
+  <!-- Script utama Aplikasi E-Aset Prokopim -->
+  <script type="text/babel" data-type="module">
+    import { createRoot } from 'react-dom/client';
+    import React, { useState, useEffect } from 'react';
+    import { 
+      LayoutDashboard, Users, Package, Home, ClipboardList, LogOut, Plus, Search, Trash2, Edit3,
+      ChevronRight, UserCircle, FileText, AlertCircle, CheckCircle2, Download, X, Cloud, Info
+    } from 'lucide-react';
+
+    // --- Firebase Setup ---
+    import { initializeApp } from 'firebase/app';
+    import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+    import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
+
+    const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+    const app = Object.keys(firebaseConfig).length > 0 ? initializeApp(firebaseConfig) : null;
+    const auth = app ? getAuth(app) : null;
+    const db = app ? getFirestore(app) : null;
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+    // --- Components ---
+    const Button = ({ children, onClick, variant = 'primary', className = '', type = 'button', disabled = false }) => {
+      const base = "px-4 py-2 rounded-lg font-medium transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed";
+      const variants = {
+        primary: "bg-blue-600 text-white hover:bg-blue-700 shadow-md hover:shadow-lg",
+        secondary: "bg-gray-100 text-gray-700 hover:bg-gray-200",
+        danger: "bg-red-500 text-white hover:bg-red-600",
+        success: "bg-emerald-500 text-white hover:bg-emerald-600 shadow-md",
+        outline: "border-2 border-blue-600 text-blue-600 hover:bg-blue-50"
+      };
+      return (
+        <button type={type} onClick={onClick} className={`${base} ${variants[variant]} ${className}`} disabled={disabled}>
+          {children}
+        </button>
+      );
+    };
+
+    const Card = ({ children, title, subtitle, icon: Icon }) => (
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-gray-500 text-sm font-medium">{title}</h3>
+            <p className="text-2xl font-bold text-gray-800">{subtitle}</p>
+          </div>
+          {Icon && <div className="p-3 bg-blue-50 rounded-lg text-blue-600"><Icon size={24} /></div>}
+        </div>
+        {children}
+      </div>
+    );
+
+    const Modal = ({ isOpen, onClose, title, children }) => {
+      if (!isOpen) return null;
+      return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+              <h3 className="font-bold text-gray-800">{title}</h3>
+              <button onClick={onClose} className="p-1 hover:bg-gray-200 rounded-full transition-colors text-gray-500">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-6 max-h-[80vh] overflow-y-auto">
+              {children}
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    const Input = ({ label, type = "text", value = "", onChange, placeholder, required = false, min, list }) => (
+      <div className="mb-4">
+        <label className="block text-sm font-semibold text-gray-700 mb-1.5">{label}</label>
+        <input
+          type={type}
+          value={value}
+          min={min}
+          list={list}
+          onChange={(e) => onChange && onChange(e.target.value)}
+          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all placeholder:text-gray-400"
+          placeholder={placeholder}
+          required={required}
+        />
+      </div>
+    );
+
+    const Select = ({ label, value, onChange, options, required = false, placeholder = "Pilih" }) => (
+      <div className="mb-4">
+        <label className="block text-sm font-semibold text-gray-700 mb-1.5">{label}</label>
+        <select
+          value={value}
+          onChange={(e) => onChange && onChange(e.target.value)}
+          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white transition-all"
+          required={required}
+        >
+          <option value="" disabled>{placeholder}</option>
+          {options.map((opt, idx) => (
+            <option key={idx} value={opt.value || opt}>{opt.label || opt}</option>
+          ))}
+        </select>
+      </div>
+    );
+
+    // --- Main App ---
+    function App() {
+      const [view, setView] = useState('login'); 
+      const [user, setUser] = useState(null);
+      const [firebaseUser, setFirebaseUser] = useState(null);
+      const [toast, setToast] = useState(null);
+      
+      const [modalType, setModalType] = useState(null); 
+      
+      const [pegawai, setPegawai] = useState([]);
+      const [barang, setBarang] = useState([]);
+      const [ruangan, setRuangan] = useState([]);
+      const [persediaan, setPersediaan] = useState([]);
+
+      const [loginData, setLoginData] = useState({ identifier: '', password: '' });
+      const [newPegawai, setNewPegawai] = useState({ nama: '', jabatan: '', nip: '' });
+      
+      const initialBarangState = { tahun: new Date().getFullYear().toString(), nama: '', kondisi: 'Baik', status: 'Aktif', pemegang: '', foto: 'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=100' };
+      const [barangData, setBarangData] = useState(initialBarangState);
+      
+      const [ruanganData, setRuanganData] = useState({ id: null, nama: '', items: [] });
+      const [tempRuanganItem, setTempRuanganItem] = useState({ nama: '', jumlah: 1, kondisi: 'Baik' });
+
+      const initialPersediaanState = { kode: '', namaRekening: '', nama: '', satuan: '', saldoAwal: 0, penambahan: 0, pengeluaran: 0, hargaSatuan: 0 };
+      const [persediaanData, setPersediaanData] = useState(initialPersediaanState);
+
+      const [stokData, setStokData] = useState({ idBarang: '', jenisTransaksi: 'Penambahan', jumlah: 1 });
+
+      useEffect(() => {
+        if (!auth) return;
+        const initAuth = async () => {
+          if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+            await signInWithCustomToken(auth, __initial_auth_token);
+          } else {
+            await signInAnonymously(auth);
+          }
+        };
+        initAuth();
+        
+        const unsubscribe = onAuthStateChanged(auth, setFirebaseUser);
+        return () => unsubscribe();
+      }, []);
+
+      useEffect(() => {
+        if (!firebaseUser || !db) return;
+
+        const collections = ['pegawai', 'barang', 'ruangan', 'persediaan'];
+        const unsubscribes = [];
+
+        collections.forEach(colName => {
+          const colRef = collection(db, 'artifacts', appId, 'users', firebaseUser.uid, colName);
+          const unsubscribe = onSnapshot(colRef, (snapshot) => {
+            const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+            
+            if (colName === 'pegawai') setPegawai(data);
+            if (colName === 'barang') setBarang(data);
+            if (colName === 'ruangan') setRuangan(data);
+            if (colName === 'persediaan') setPersediaan(data);
+          }, (error) => {
+            console.error(`Error fetching ${colName}:`, error);
+          });
+          unsubscribes.push(unsubscribe);
+        });
+
+        return () => unsubscribes.forEach(unsub => unsub());
+      }, [firebaseUser]);
+
+      // --- Utility Functions ---
+      const showToast = (message) => {
+        setToast(message);
+        setTimeout(() => setToast(null), 3000);
+      };
+
+      const saveToDb = async (colName, id, data) => {
+        if (!firebaseUser || !db) {
+           // Fallback to local state if no DB
+           if(colName === 'pegawai') setPegawai(prev => { const idx = prev.findIndex(p => p.id === id); return idx >= 0 ? prev.map(p => p.id === id ? data : p) : [...prev, data] });
+           if(colName === 'barang') setBarang(prev => { const idx = prev.findIndex(p => p.id === id); return idx >= 0 ? prev.map(p => p.id === id ? data : p) : [...prev, data] });
+           if(colName === 'ruangan') setRuangan(prev => { const idx = prev.findIndex(p => p.id === id); return idx >= 0 ? prev.map(p => p.id === id ? data : p) : [...prev, data] });
+           if(colName === 'persediaan') setPersediaan(prev => { const idx = prev.findIndex(p => p.id === id); return idx >= 0 ? prev.map(p => p.id === id ? data : p) : [...prev, data] });
+           return;
+        }
+        const docRef = doc(db, 'artifacts', appId, 'users', firebaseUser.uid, colName, id.toString());
+        await setDoc(docRef, data);
+      };
+
+      const deleteFromDb = async (colName, id) => {
+        if (!firebaseUser || !db) {
+            // Fallback to local state
+           if(colName === 'pegawai') setPegawai(prev => prev.filter(p => p.id !== id));
+           if(colName === 'barang') setBarang(prev => prev.filter(p => p.id !== id));
+           if(colName === 'ruangan') setRuangan(prev => prev.filter(p => p.id !== id));
+           if(colName === 'persediaan') setPersediaan(prev => prev.filter(p => p.id !== id));
+           return;
+        }
+        const docRef = doc(db, 'artifacts', appId, 'users', firebaseUser.uid, colName, id.toString());
+        await deleteDoc(docRef);
+      };
+
+      // --- Handlers ---
+      const handleLogin = (e) => {
+        e.preventDefault();
+        setUser({ name: loginData.identifier || "Admin Prokopim" });
+        setView('dashboard');
+      };
+
+      const handleSavePegawai = async (e) => {
+        e.preventDefault();
+        const id = newPegawai.id || Date.now().toString();
+        const payload = { ...newPegawai, id };
+        
+        await saveToDb('pegawai', id, payload);
+        showToast(newPegawai.id ? "Data Pegawai Berhasil Diperbarui" : "Data Pegawai Berhasil Ditambahkan");
+        
+        setNewPegawai({ nama: '', jabatan: '', nip: '' });
+        setModalType(null);
+      };
+
+      const handleSaveBarang = async (e) => {
+        e.preventDefault();
+        const id = barangData.id || Date.now().toString();
+        const payload = { ...barangData, id };
+        
+        await saveToDb('barang', id, payload);
+        showToast(barangData.id ? "Data Barang Berhasil Diperbarui" : "Data Barang Berhasil Ditambahkan");
+        setModalType(null);
+      };
+
+      const handleAddRuanganItem = () => {
+        if(!tempRuanganItem.nama || tempRuanganItem.jumlah < 1) return;
+        setRuanganData({
+          ...ruanganData,
+          items: [...(ruanganData.items || []), { ...tempRuanganItem, id: Date.now().toString() }]
+        });
+        setTempRuanganItem({ nama: '', jumlah: 1, kondisi: 'Baik' });
+      };
+
+      const handleRemoveRuanganItem = (itemId) => {
+        setRuanganData({
+          ...ruanganData,
+          items: (ruanganData.items || []).filter(item => item.id !== itemId)
+        });
+      };
+
+      const handleSaveRuangan = async (e) => {
+        e.preventDefault();
+        const id = ruanganData.id || Date.now().toString();
+        const payload = { ...ruanganData, id };
+        
+        await saveToDb('ruangan', id, payload);
+        showToast(ruanganData.id ? "Inventaris Ruangan Berhasil Diperbarui" : "Ruangan Baru Berhasil Ditambahkan");
+        setModalType(null);
+      };
+
+      const handleSaveStok = async (e) => {
+        e.preventDefault();
+        if (!stokData.idBarang) return;
+        
+        const target = persediaan.find(p => p.id.toString() === stokData.idBarang.toString());
+        if (target) {
+          const qty = parseInt(stokData.jumlah);
+          const payload = { ...target };
+          
+          if (stokData.jenisTransaksi === 'Penambahan') {
+            payload.penambahan += qty;
+          } else {
+            payload.pengeluaran += qty;
+          }
+          
+          await saveToDb('persediaan', target.id, payload);
+          setModalType(null);
+          showToast(`Stok berhasil diupdate (${stokData.jenisTransaksi})`);
+        }
+      };
+
+      const handleSavePersediaan = async (e) => {
+        e.preventDefault();
+        const id = persediaanData.id || Date.now().toString();
+        const payload = {
+          ...persediaanData,
+          id,
+          saldoAwal: parseInt(persediaanData.saldoAwal) || 0,
+          penambahan: parseInt(persediaanData.penambahan) || 0,
+          pengeluaran: parseInt(persediaanData.pengeluaran) || 0,
+          hargaSatuan: parseInt(persediaanData.hargaSatuan) || 0
+        };
+        
+        await saveToDb('persediaan', id, payload);
+        showToast(persediaanData.id ? "Data Persediaan Berhasil Diperbarui" : "Data Persediaan Berhasil Ditambahkan");
+        
+        setPersediaanData(initialPersediaanState);
+        setModalType(null);
+      };
+
+      const downloadPDF = () => {
+        window.print();
+      };
+
+      if (view === 'login') {
+        return (
+          <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+            <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border border-gray-100">
+              <div className="text-center mb-8">
+                <div className="w-20 h-20 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
+                  <Package className="text-white" size={40} />
+                </div>
+                <h1 className="text-2xl font-bold text-gray-800">E-Aset Prokopim</h1>
+                <p className="text-gray-500 text-sm mt-1">Sistem Informasi Manajemen Aset</p>
+                {auth && db ? (
+                  <div className="mt-4 flex items-center justify-center gap-2 text-xs text-emerald-600 bg-emerald-50 py-2 rounded-lg font-medium">
+                    <Cloud size={14} /> Sinkronisasi Cloud Aktif
+                  </div>
+                ) : (
+                  <div className="mt-4 flex items-center justify-center gap-2 text-xs text-orange-600 bg-orange-50 py-2 rounded-lg font-medium">
+                    <FileText size={14} /> Memori Lokal Sementara
+                  </div>
+                )}
+              </div>
+              <form onSubmit={handleLogin}>
+                <Input 
+                  label="Email / Username" 
+                  placeholder="admin@prokopim.go.id" 
+                  value={loginData.identifier}
+                  onChange={(val) => setLoginData({...loginData, identifier: val})}
+                  required 
+                />
+                <Input 
+                  label="Password" 
+                  type="password" 
+                  placeholder="••••••••" 
+                  value={loginData.password}
+                  onChange={(val) => setLoginData({...loginData, password: val})}
+                  required 
+                />
+                <Button type="submit" className="w-full mt-2">Masuk ke Aplikasi</Button>
+              </form>
+            </div>
+          </div>
+        );
+      }
+
+      const SidebarItem = ({ id, icon: Icon, label }) => (
+        <button
+          onClick={() => setView(id)}
+          className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 ${
+            view === id ? "bg-blue-600 text-white shadow-md" : "text-gray-500 hover:bg-blue-50 hover:text-blue-600"
+          }`}
+        >
+          <Icon size={20} />
+          <span className="font-medium">{label}</span>
+        </button>
+      );
+
+      return (
+        <div className="flex min-h-screen bg-gray-50 text-gray-800 font-sans print:bg-white relative">
+          {toast && (
+            <div className="fixed bottom-6 right-6 bg-gray-800 text-white px-6 py-3 rounded-lg shadow-2xl flex items-center gap-3 z-50 animate-in slide-in-from-bottom-5">
+              <CheckCircle2 className="text-green-400" size={20} />
+              <span className="font-medium">{toast}</span>
+            </div>
+          )}
+
+          <Modal isOpen={modalType === 'pegawai'} onClose={() => setModalType(null)} title={newPegawai.id ? "Edit Pegawai" : "Tambah Pegawai Baru"}>
+            <form onSubmit={handleSavePegawai}>
+              <Input label="Nama Lengkap" value={newPegawai.nama} onChange={(val) => setNewPegawai({...newPegawai, nama: val})} required />
+              <Input label="Jabatan" value={newPegawai.jabatan} onChange={(val) => setNewPegawai({...newPegawai, jabatan: val})} required />
+              <Input label="NIP" value={newPegawai.nip} onChange={(val) => setNewPegawai({...newPegawai, nip: val})} required />
+              <Button type="submit" className="w-full">Simpan Data Pegawai</Button>
+            </form>
+          </Modal>
+
+          <Modal isOpen={modalType === 'barang'} onClose={() => setModalType(null)} title={barangData.id ? "Edit Aset Barang" : "Tambah Aset Barang Baru"}>
+            <form onSubmit={handleSaveBarang}>
+              <Input label="Nama Barang" value={barangData.nama} onChange={(val) => setBarangData({...barangData, nama: val})} required />
+              <div className="grid grid-cols-2 gap-4">
+                <Input label="Tahun Perolehan" type="number" value={barangData.tahun} onChange={(val) => setBarangData({...barangData, tahun: val})} required />
+                <Select label="Kondisi" value={barangData.kondisi} onChange={(val) => setBarangData({...barangData, kondisi: val})} options={['Baik', 'Rusak Ringan', 'Rusak Berat']} required />
+              </div>
+              <Select 
+                label="Status" 
+                value={barangData.status} 
+                onChange={(val) => setBarangData({...barangData, status: val})} 
+                options={['Aktif', 'Dipinjamkan', 'Maintenance', 'Dihapuskan', 'Tidak Diketahui']} 
+                required 
+              />
+              <Select 
+                label="Pemegang / Penanggung Jawab" 
+                value={barangData.pemegang} 
+                onChange={(val) => setBarangData({...barangData, pemegang: val})} 
+                options={pegawai.map(p => ({ label: `${p.nama} (${p.jabatan})`, value: p.nama }))}
+                placeholder="Pilih Pemegang/Penanggung Jawab"
+                required 
+              />
+              <Button type="submit" className="w-full mt-4">Simpan Data Aset</Button>
+            </form>
+          </Modal>
+
+          <Modal isOpen={modalType === 'ruangan'} onClose={() => setModalType(null)} title={ruanganData.id ? "Edit Inventaris Ruangan" : "Tambah Inventaris Ruangan"}>
+            <form onSubmit={handleSaveRuangan}>
+              <Input label="Nama Ruangan" value={ruanganData.nama} onChange={(val) => setRuanganData({...ruanganData, nama: val})} required />
+              
+              <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 mb-6">
+                <label className="block text-sm font-bold text-gray-700 mb-3">Daftar Barang dalam Ruangan</label>
+                <div className="grid grid-cols-12 gap-2 mb-4 items-end">
+                  <div className="col-span-5">
+                    <Input label="Nama Barang" value={tempRuanganItem.nama} onChange={(val) => setTempRuanganItem({...tempRuanganItem, nama: val})} placeholder="Cth: Meja" />
+                  </div>
+                  <div className="col-span-2">
+                    <Input label="Jml" type="number" min="1" value={tempRuanganItem.jumlah} onChange={(val) => setTempRuanganItem({...tempRuanganItem, jumlah: val})} />
+                  </div>
+                  <div className="col-span-3">
+                    <Select label="Kondisi" value={tempRuanganItem.kondisi} onChange={(val) => setTempRuanganItem({...tempRuanganItem, kondisi: val})} options={['Baik', 'Rusak Ringan', 'Rusak Berat']} />
+                  </div>
+                  <div className="col-span-2 pb-4">
+                    <Button variant="secondary" onClick={handleAddRuanganItem} className="w-full h-11"><Plus size={16}/></Button>
+                  </div>
+                </div>
+
+                {ruanganData.items && ruanganData.items.length > 0 ? (
+                  <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">
+                    <table className="w-full text-sm text-left">
+                      <thead className="bg-gray-100 text-gray-600 font-semibold border-b">
+                        <tr><th className="px-4 py-2">Nama Barang</th><th className="px-4 py-2 text-center">Jml</th><th className="px-4 py-2">Kondisi</th><th className="px-4 py-2 text-center">Aksi</th></tr>
+                      </thead>
+                      <tbody>
+                        {ruanganData.items.map((item) => (
+                          <tr key={item.id} className="border-b last:border-0 hover:bg-gray-50">
+                            <td className="px-4 py-2 font-medium">{item.nama}</td>
+                            <td className="px-4 py-2 text-center">{item.jumlah}</td>
+                            <td className="px-4 py-2"><span className={`text-xs px-2 py-1 rounded-full ${item.kondisi === 'Baik' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{item.kondisi}</span></td>
+                            <td className="px-4 py-2 text-center"><button type="button" onClick={() => handleRemoveRuanganItem(item.id)} className="text-red-500 hover:bg-red-50 p-1 rounded"><Trash2 size={14}/></button></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-400 italic text-center py-4 border-2 border-dashed rounded-lg bg-white">Belum ada barang ditambahkan</p>
+                )}
+              </div>
+              <Button type="submit" className="w-full mt-4">Simpan Data Ruangan</Button>
+            </form>
+          </Modal>
+
+          <Modal isOpen={modalType === 'stok'} onClose={() => setModalType(null)} title="Update Stok Persediaan">
+            <form onSubmit={handleSaveStok}>
+              <Select label="Pilih Barang Persediaan" value={stokData.idBarang} onChange={(val) => setStokData({...stokData, idBarang: val})} options={persediaan.map(p => ({ label: `${p.kode} - ${p.nama}`, value: p.id }))} required />
+              <div className="grid grid-cols-2 gap-4">
+                <Select label="Jenis Transaksi" value={stokData.jenisTransaksi} onChange={(val) => setStokData({...stokData, jenisTransaksi: val})} options={['Penambahan', 'Pengeluaran']} required />
+                <Input label="Jumlah" type="number" min="1" value={stokData.jumlah} onChange={(val) => setStokData({...stokData, jumlah: val})} required />
+              </div>
+              <div className="bg-blue-50 text-blue-800 p-4 rounded-lg mb-4 text-sm flex gap-2">
+                <Info size={16} className="mt-0.5 shrink-0" />
+                <p>Saldo akhir akan dihitung secara otomatis berdasarkan histori Saldo Awal + Penambahan - Pengeluaran.</p>
+              </div>
+              <Button type="submit" className="w-full">Simpan Pembaruan Stok</Button>
+            </form>
+          </Modal>
+
+          <Modal isOpen={modalType === 'persediaan_form'} onClose={() => setModalType(null)} title={persediaanData.id ? "Edit Barang Persediaan" : "Tambah Barang Persediaan"}>
+            <form onSubmit={handleSavePersediaan}>
+              <datalist id="kode-rekening-list">
+                {[...new Set(persediaan.map(p => p.kode))].map(kode => (
+                  <option key={kode} value={kode} />
+                ))}
+              </datalist>
+              <div className="grid grid-cols-2 gap-4">
+                <Input label="Kode Rekening" value={persediaanData.kode} onChange={(val) => setPersediaanData({...persediaanData, kode: val})} list="kode-rekening-list" required />
+                <Input label="Nama Rekening" value={persediaanData.namaRekening} onChange={(val) => setPersediaanData({...persediaanData, namaRekening: val})} required />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <Input label="Nama Barang" value={persediaanData.nama} onChange={(val) => setPersediaanData({...persediaanData, nama: val})} required />
+                <Input label="Satuan (cth: Rim, Botol)" value={persediaanData.satuan} onChange={(val) => setPersediaanData({...persediaanData, satuan: val})} required />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <Input label="Saldo Awal" type="number" min="0" value={persediaanData.saldoAwal} onChange={(val) => setPersediaanData({...persediaanData, saldoAwal: val})} required />
+                <Input label="Harga Satuan (Rp)" type="number" min="0" value={persediaanData.hargaSatuan} onChange={(val) => setPersediaanData({...persediaanData, hargaSatuan: val})} required />
+              </div>
+              <Button type="submit" className="w-full mt-4">Simpan Data Persediaan</Button>
+            </form>
+          </Modal>
+
+          <aside className="w-64 bg-white border-r border-gray-200 p-6 flex flex-col hidden md:flex print:hidden">
+            <div className="flex items-center gap-3 mb-10 px-2">
+              <div className="p-2 bg-blue-600 rounded-lg text-white">
+                <Package size={24} />
+              </div>
+              <h1 className="font-bold text-xl tracking-tight">E-Aset <span className="text-blue-600">Prokopim</span></h1>
+            </div>
+            
+            <nav className="space-y-2 flex-1">
+              <SidebarItem id="dashboard" icon={LayoutDashboard} label="Dashboard" />
+              <SidebarItem id="pegawai" icon={Users} label="Daftar Pegawai" />
+              <SidebarItem id="barang" icon={ClipboardList} label="Daftar Barang" />
+              <SidebarItem id="ruangan" icon={Home} label="Inventaris Ruang" />
+              <SidebarItem id="persediaan" icon={FileText} label="Barang Persediaan" />
+            </nav>
+
+            <div className="pt-6 border-t border-gray-100">
+              <div className="flex items-center gap-3 px-2 mb-6">
+                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600">
+                  <UserCircle size={24} />
+                </div>
+                <div className="overflow-hidden">
+                  <p className="text-sm font-bold truncate">{user?.name}</p>
+                  {auth && db ? (
+                     <p className="text-xs text-emerald-600 font-medium flex items-center gap-1 mt-1"><Cloud size={12}/> Tersinkronisasi</p>
+                  ) : (
+                     <p className="text-xs text-orange-500 font-medium flex items-center gap-1 mt-1"><FileText size={12}/> Mode Lokal</p>
+                  )}
+                </div>
+              </div>
+              <button onClick={() => setView('login')} className="w-full flex items-center gap-3 px-4 py-3 text-red-500 hover:bg-red-50 rounded-lg transition-all">
+                <LogOut size={20} />
+                <span className="font-medium">Keluar</span>
+              </button>
+            </div>
+          </aside>
+
+          <main className="flex-1 overflow-y-auto h-screen print:h-auto print:overflow-visible">
+            <header className="bg-white border-b border-gray-200 px-8 py-4 flex items-center justify-between sticky top-0 z-10 print:hidden">
+              <h2 className="text-xl font-bold text-gray-800 capitalize">
+                {view === 'dashboard' ? 'Overview Dashboard' : view.replace(/([A-Z])/g, ' $1').trim()}
+              </h2>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 mr-4 px-3 py-1.5 bg-green-50 text-green-700 rounded-full text-xs font-bold border border-green-200">
+                  <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                  {auth && db ? 'Sinkronisasi Cloud' : 'Data Tersimpan Lokal'}
+                </div>
+                <Button variant="outline" onClick={() => downloadPDF()} className="text-sm h-10">
+                  <Download size={16} /> Unduh PDF
+                </Button>
+              </div>
+            </header>
+
+            <div className="p-8 max-w-7xl mx-auto">
+              {view === 'dashboard' && (
+                <div className="space-y-8 print:hidden">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <Card title="Total Barang Aset" subtitle={barang.length} icon={ClipboardList} />
+                    <Card title="Total Pegawai" subtitle={pegawai.length} icon={Users} />
+                    <Card title="Jumlah Ruangan" subtitle={ruangan.length} icon={Home} />
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                      <h3 className="font-bold mb-4 flex items-center gap-2">
+                        <AlertCircle className="text-orange-500" size={20} />
+                        Aset Kondisi Rusak
+                      </h3>
+                      <div className="space-y-4">
+                        {barang.filter(b => b.kondisi !== 'Baik').length > 0 ? (
+                           barang.filter(b => b.kondisi !== 'Baik').map(b => (
+                             <div key={b.id} className="flex justify-between items-center p-3 bg-red-50 rounded-lg">
+                               <span className="font-medium">{b.nama}</span>
+                               <span className="text-xs font-bold text-red-600">{b.kondisi}</span>
+                             </div>
+                           ))
+                        ) : (
+                          <p className="text-gray-500 text-sm italic">Tidak ada data aset rusak saat ini.</p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                      <h3 className="font-bold mb-4 flex items-center gap-2">
+                        <CheckCircle2 className="text-green-500" size={20} />
+                        Aktivitas Terbaru
+                      </h3>
+                      <div className="space-y-4">
+                        {barang.length > 0 ? (
+                          <div className="flex gap-4 items-start pb-4 border-b border-gray-50 last:border-0">
+                            <div className="w-2 h-2 bg-blue-500 rounded-full mt-2"></div>
+                            <div>
+                              <p className="text-sm font-medium">Penambahan Aset Baru: {barang[barang.length-1]?.nama}</p>
+                              <p className="text-xs text-gray-400">Baru saja</p>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-gray-500 text-sm italic">Belum ada aktivitas.</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {view === 'pegawai' && (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                  <div className="p-6 border-b border-gray-200 flex items-center justify-between print:hidden">
+                    <h3 className="font-bold text-lg">Daftar Pegawai Prokopim</h3>
+                    <Button variant="primary" onClick={() => { setNewPegawai({ nama: '', jabatan: '', nip: '' }); setModalType('pegawai'); }}><Plus size={18} /> Tambah Pegawai</Button>
+                  </div>
+                  <div className="p-8 hidden print:block text-center border-b mb-4">
+                    <h1 className="text-2xl font-bold uppercase underline">DAFTAR PEGAWAI PROKOPIM</h1>
+                  </div>
+                  <table className="w-full text-left">
+                    <thead className="bg-gray-50 text-gray-500 uppercase text-xs font-bold print:bg-gray-100 print:text-black">
+                      <tr>
+                        <th className="px-6 py-4">Nama Lengkap</th>
+                        <th className="px-6 py-4">Jabatan</th>
+                        <th className="px-6 py-4">NIP</th>
+                        <th className="px-6 py-4 print:hidden">Aksi</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {pegawai.length === 0 && (
+                        <tr><td colSpan="4" className="px-6 py-8 text-center text-gray-400 italic">Data Pegawai Masih Kosong</td></tr>
+                      )}
+                      {pegawai.map(p => (
+                        <tr key={p.id} className="hover:bg-gray-50 transition-colors">
+                          <td className="px-6 py-4 font-medium">{p.nama}</td>
+                          <td className="px-6 py-4 text-gray-600">{p.jabatan}</td>
+                          <td className="px-6 py-4 text-gray-600 font-mono">{p.nip}</td>
+                          <td className="px-6 py-4 print:hidden">
+                            <div className="flex gap-2">
+                              <button className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg" onClick={() => { setNewPegawai(p); setModalType('pegawai'); }}><Edit3 size={16} /></button>
+                              <button className="p-2 text-red-500 hover:bg-red-50 rounded-lg" onClick={() => { if(window.confirm('Yakin ingin menghapus pegawai ini?')) { deleteFromDb('pegawai', p.id); showToast("Pegawai dihapus"); } }}><Trash2 size={16} /></button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {view === 'barang' && (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                  <div className="p-6 border-b border-gray-200 flex items-center justify-between print:hidden">
+                    <h3 className="font-bold text-lg">Daftar Barang (Aset Tetap)</h3>
+                    <div className="flex gap-2">
+                      <Button variant="primary" onClick={() => { setBarangData(initialBarangState); setModalType('barang'); }}><Plus size={18} /> Tambah Aset</Button>
+                    </div>
+                  </div>
+                  <div className="p-8 hidden print:block text-center border-b mb-4">
+                    <h1 className="text-2xl font-bold uppercase underline">DAFTAR INVENTARIS BARANG ASET</h1>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                      <thead className="bg-gray-50 text-gray-500 uppercase text-xs font-bold print:bg-gray-100 print:text-black">
+                        <tr>
+                          <th className="px-6 py-4 print:hidden">Foto</th>
+                          <th className="px-6 py-4">Nama Barang</th>
+                          <th className="px-6 py-4 text-center">Tahun</th>
+                          <th className="px-6 py-4">Kondisi</th>
+                          <th className="px-6 py-4">Pemegang</th>
+                          <th className="px-6 py-4">Status</th>
+                          <th className="px-6 py-4 print:hidden">Aksi</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {barang.length === 0 && (
+                          <tr><td colSpan="7" className="px-6 py-8 text-center text-gray-400 italic">Data Barang Masih Kosong</td></tr>
+                        )}
+                        {barang.map(b => (
+                          <tr key={b.id} className="hover:bg-gray-50 transition-colors">
+                            <td className="px-6 py-4 print:hidden">
+                              <img src={b.foto} alt={b.nama} className="w-12 h-12 object-cover rounded-lg border border-gray-200 shadow-sm" />
+                            </td>
+                            <td className="px-6 py-4 font-bold">{b.nama}</td>
+                            <td className="px-6 py-4 text-center">{b.tahun}</td>
+                            <td className="px-6 py-4">
+                              <span className={`px-3 py-1 rounded-full text-xs font-bold ${b.kondisi === 'Baik' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{b.kondisi}</span>
+                            </td>
+                            <td className="px-6 py-4">{b.pemegang}</td>
+                            <td className="px-6 py-4 text-blue-600 font-medium">{b.status}</td>
+                            <td className="px-6 py-4 print:hidden">
+                              <div className="flex gap-2">
+                                <button className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg" onClick={() => { setBarangData(b); setModalType('barang'); }}><Edit3 size={16} /></button>
+                                <button className="p-2 text-red-500 hover:bg-red-50 rounded-lg" onClick={() => { if(window.confirm('Yakin ingin menghapus barang ini?')) { deleteFromDb('barang', b.id); showToast("Barang dihapus"); } }}><Trash2 size={16} /></button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {view === 'ruangan' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {ruangan.map(r => {
+                    const totalItem = r.items ? r.items.reduce((acc, curr) => acc + parseInt(curr.jumlah), 0) : 0;
+                    
+                    return (
+                    <div key={r.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-lg transition-all cursor-pointer group print:shadow-none print:border print:mb-4 flex flex-col">
+                      <div className="p-6 bg-gradient-to-r from-blue-600 to-blue-500 text-white flex justify-between items-center print:from-white print:to-white print:text-black print:border-b">
+                        <div>
+                          <h4 className="font-bold text-lg">{r.nama}</h4>
+                          <p className="text-blue-100 text-sm print:text-gray-500">Lokasi Internal Kantor</p>
+                        </div>
+                        <Home size={24} className="opacity-50 print:hidden" />
+                      </div>
+                      <div className="p-6 flex-1 flex flex-col">
+                        <div className="mb-4 flex-1">
+                          <p className="text-xs font-bold text-gray-400 uppercase mb-3 border-b pb-2">Daftar Inventaris Terpisah</p>
+                          
+                          {r.items && r.items.length > 0 ? (
+                            <table className="w-full text-sm text-left mb-2">
+                              <thead className="text-gray-500 font-medium border-b border-dashed">
+                                <tr>
+                                  <th className="py-1">Barang</th>
+                                  <th className="py-1 text-center">Jml</th>
+                                  <th className="py-1 text-right">Kondisi</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {r.items.map(item => (
+                                  <tr key={item.id} className="border-b border-gray-50 last:border-0">
+                                    <td className="py-2 text-gray-800">{item.nama}</td>
+                                    <td className="py-2 text-center text-gray-600 font-mono">{item.jumlah}</td>
+                                    <td className="py-2 text-right">
+                                      <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-sm ${item.kondisi === 'Baik' ? 'text-green-600 bg-green-50' : 'text-red-600 bg-red-50'}`}>{item.kondisi}</span>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          ) : (
+                            <p className="text-sm text-gray-400 italic">Belum ada barang</p>
+                          )}
+                        </div>
+
+                        <div className="flex justify-between items-center pt-4 border-t border-gray-100">
+                          <div>
+                            <span className="text-xs text-gray-400 block uppercase">Total Fisik</span>
+                            <span className="font-bold text-lg text-blue-600">{totalItem} Unit</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex gap-2 print:hidden">
+                        <button onClick={(e) => { e.stopPropagation(); setRuanganData(r); setModalType('ruangan'); }} className="flex-1 py-2 px-4 bg-white border border-gray-200 text-blue-600 font-medium rounded-lg hover:bg-blue-50 hover:border-blue-200 transition-colors flex items-center justify-center gap-2">
+                          <Edit3 size={16} /> Edit
+                        </button>
+                        <button onClick={(e) => { e.stopPropagation(); if(window.confirm('Yakin ingin menghapus seluruh ruangan ini?')) { deleteFromDb('ruangan', r.id); showToast('Ruangan dihapus'); } }} className="flex-1 py-2 px-4 bg-white border border-gray-200 text-red-600 font-medium rounded-lg hover:bg-red-50 hover:border-red-200 transition-colors flex items-center justify-center gap-2">
+                          <Trash2 size={16} /> Hapus
+                        </button>
+                      </div>
+                    </div>
+                  )})}
+                  <div onClick={() => { setRuanganData({ id: null, nama: '', items: [] }); setModalType('ruangan'); }} className="border-2 border-dashed border-gray-300 rounded-xl flex items-center justify-center p-12 hover:border-blue-400 hover:bg-blue-50 transition-all cursor-pointer print:hidden">
+                     <div className="text-center">
+                       <Plus className="mx-auto text-gray-400 mb-2" size={32} />
+                       <p className="text-gray-500 font-medium">Tambah Inventaris Ruangan</p>
+                     </div>
+                  </div>
+                </div>
+              )}
+
+              {view === 'persediaan' && (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                  <div className="p-6 border-b border-gray-200 flex items-center justify-between print:hidden">
+                    <h3 className="font-bold text-lg">Kartu Barang Persediaan</h3>
+                    <div className="flex gap-2">
+                      <Button variant="secondary" onClick={() => { setStokData({ idBarang: '', jenisTransaksi: 'Penambahan', jumlah: 1 }); setModalType('stok'); }}><Plus size={18} /> Update Stok</Button>
+                      <Button variant="primary" onClick={() => { setPersediaanData(initialPersediaanState); setModalType('persediaan_form'); }}><Plus size={18} /> Tambah Barang</Button>
+                    </div>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm">
+                      <thead className="bg-gray-50 text-gray-500 uppercase font-bold border-b border-gray-200 print:bg-gray-100 print:text-black">
+                        <tr>
+                          <th rowSpan="2" className="px-4 py-4 text-center border-r border-gray-200">Kode & Nama Rekening</th>
+                          <th rowSpan="2" className="px-4 py-4">Nama Barang / Satuan</th>
+                          <th colSpan="2" className="px-4 py-2 text-center border-b border-gray-200 bg-blue-50 text-blue-600 print:bg-white print:text-black">Saldo Awal</th>
+                          <th colSpan="2" className="px-4 py-2 text-center border-b border-gray-200 bg-green-50 text-green-600 print:bg-white print:text-black">Penambahan</th>
+                          <th colSpan="2" className="px-4 py-2 text-center border-b border-gray-200 bg-red-50 text-red-600 print:bg-white print:text-black">Pengeluaran</th>
+                          <th colSpan="2" className="px-4 py-2 text-center border-b border-gray-200 bg-gray-100 text-gray-800 print:bg-white print:text-black">Saldo Akhir</th>
+                          <th rowSpan="2" className="px-4 py-4 text-center print:hidden">Aksi</th>
+                        </tr>
+                        <tr className="bg-gray-50 print:bg-white">
+                          <th className="px-4 py-2 text-center border-r border-gray-200">Jml</th>
+                          <th className="px-4 py-2 text-center border-r border-gray-200">Total Rp</th>
+                          <th className="px-4 py-2 text-center border-r border-gray-200">Jml</th>
+                          <th className="px-4 py-2 text-center border-r border-gray-200">Total Rp</th>
+                          <th className="px-4 py-2 text-center border-r border-gray-200">Jml</th>
+                          <th className="px-4 py-2 text-center border-r border-gray-200">Total Rp</th>
+                          <th className="px-4 py-2 text-center border-r border-gray-200">Jml</th>
+                          <th className="px-4 py-2 text-center">Total Rp</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {persediaan.length === 0 && (
+                          <tr><td colSpan="11" className="px-6 py-8 text-center text-gray-400 italic">Data Barang Persediaan Masih Kosong</td></tr>
+                        )}
+                        {persediaan.map(p => {
+                          const saldoAkhir = p.saldoAwal + p.penambahan - p.pengeluaran;
+                          const formatRupiah = (val) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(val);
+                          
+                          return (
+                            <tr key={p.id} className="hover:bg-gray-50 transition-colors">
+                              <td className="px-4 py-4 text-center border-r border-gray-100">
+                                <p className="font-mono text-xs font-bold">{p.kode}</p>
+                                <p className="text-[10px] text-gray-500 mt-1 uppercase">{p.namaRekening}</p>
+                              </td>
+                              <td className="px-4 py-4">
+                                <p className="font-bold text-gray-800">{p.nama}</p>
+                                <p className="text-xs text-gray-500">Satuan: {p.satuan}</p>
+                              </td>
+                              <td className="px-4 py-4 text-center">{p.saldoAwal}</td>
+                              <td className="px-4 py-4 text-right border-r border-gray-100 font-mono text-xs italic">{formatRupiah(p.saldoAwal * p.hargaSatuan)}</td>
+                              <td className="px-4 py-4 text-center text-green-600 font-bold">{p.penambahan}</td>
+                              <td className="px-4 py-4 text-right border-r border-gray-100 font-mono text-xs italic">{formatRupiah(p.penambahan * p.hargaSatuan)}</td>
+                              <td className="px-4 py-4 text-center text-red-600 font-bold">{p.pengeluaran}</td>
+                              <td className="px-4 py-4 text-right border-r border-gray-100 font-mono text-xs italic">{formatRupiah(p.pengeluaran * p.hargaSatuan)}</td>
+                              <td className="px-4 py-4 text-center bg-gray-50 font-bold">{saldoAkhir}</td>
+                              <td className="px-4 py-4 text-right bg-gray-50 font-bold text-blue-600 font-mono text-xs">{formatRupiah(saldoAkhir * p.hargaSatuan)}</td>
+                              <td className="px-4 py-4 print:hidden">
+                                <div className="flex gap-2 justify-center">
+                                  <button className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg" onClick={() => { setPersediaanData(p); setModalType('persediaan_form'); }}><Edit3 size={16} /></button>
+                                  <button className="p-2 text-red-500 hover:bg-red-50 rounded-lg" onClick={() => { if(window.confirm('Yakin menghapus persediaan ini?')) { deleteFromDb('persediaan', p.id); showToast('Persediaan dihapus'); } }}><Trash2 size={16} /></button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          </main>
+        </div>
+      );
+    }
+    
+    // --- Render App ke DOM ---
+    const root = createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
 </html>
