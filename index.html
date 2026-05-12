@@ -206,10 +206,10 @@
       const [signupData, setSignupData] = useState({ nama: '', nip: '', jabatan: '', email: '', password: '' });
       const [newPegawai, setNewPegawai] = useState({ nama: '', jabatan: '', nip: '', status: 'PNS', penempatan: 'Bagian Prokopim' });
       
-      const initialBarangState = { tahun: new Date().getFullYear().toString(), nama: '', kondisi: 'Baik', status: 'Aktif', pemegang: '', foto: 'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=100' };
+      const initialBarangState = { tahun: new Date().getFullYear().toString(), nama: '', kondisi: 'Baik', status: 'Aktif', pemegang: '', lokasi: '', peminjamNama: '', peminjamNip: '', peminjamJabatan: '', foto: 'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=100' };
       const [barangData, setBarangData] = useState(initialBarangState);
       
-      const [ruanganData, setRuanganData] = useState({ id: null, nama: '', items: [] });
+      const [ruanganData, setRuanganData] = useState({ id: null, nama: '', foto: '', items: [] });
       const [tempRuanganItem, setTempRuanganItem] = useState({ nama: '', jumlah: 1, kondisi: 'Baik' });
 
       const initialPersediaanState = { kode: '', namaRekening: '', nama: '', satuan: '', saldoAwal: 0, penambahan: 0, pengeluaran: 0, hargaSatuan: 0 };
@@ -303,13 +303,21 @@
             showToast("Berhasil masuk!");
             return; // Berhenti di sini, onAuthStateChanged akan menangkap event dan pindah ke dashboard
           } catch (error) {
-            console.error("Firebase login failed:", error);
-            alert("Gagal masuk: Email atau password salah.");
+            console.warn("Peringatan Firebase:", error.message);
+            // Fallback ke Lokal Storage jika Firebase gagal (misal belum dikonfigurasi)
+            const isExist = registeredUsers.find(u => u.email === loginData.identifier && u.password === loginData.password);
+            if (isExist) {
+              setUser({ name: isExist.nama });
+              setView('dashboard');
+              showToast("Berhasil masuk (Mode Lokal)!");
+            } else {
+              alert("Gagal masuk: Email atau password salah.");
+            }
             return;
           }
         }
 
-        // 2. Fallback ke Lokal Storage (jika Firebase dihapus/tidak digunakan)
+        // 2. Fallback jika auth null
         const isExist = registeredUsers.find(u => u.email === loginData.identifier && u.password === loginData.password);
         if (isExist) {
           setUser({ name: isExist.nama });
@@ -340,18 +348,17 @@
             await createUserWithEmailAndPassword(auth, signupData.email, signupData.password);
             showToast("Registrasi berhasil!");
             setSignupData({ nama: '', nip: '', jabatan: '', email: '', password: '' });
-            // Note: Firebase otomatis me-login-kan user setelah registrasi, onAuthStateChanged akan memindahkannya ke dashboard
             return; 
           } catch (error) {
-            console.error("Firebase registration error:", error.message);
-            alert("Registrasi Gagal: Email mungkin sudah digunakan atau password kurang dari 6 karakter.");
-            return;
+            console.warn("Peringatan Registrasi Firebase:", error.message);
+            // Fallback ke lokal
           }
         }
 
-        showToast("Registrasi berhasil! Silakan masuk.");
+        showToast("Registrasi berhasil! Anda masuk dengan memori lokal.");
+        setUser({ name: signupData.nama });
         setSignupData({ nama: '', nip: '', jabatan: '', email: '', password: '' });
-        setView('login');
+        setView('dashboard');
       };
 
       const handleLogout = async () => {
@@ -370,7 +377,7 @@
         const payload = { ...newPegawai, id };
         await saveToDb('pegawai', id, payload);
         showToast(newPegawai.id ? "Data Pegawai Berhasil Diperbarui" : "Data Pegawai Berhasil Ditambahkan");
-        setNewPegawai({ nama: '', jabatan: '', nip: '', status: 'PNS', penempatan: 'Bagian Prokopim' });
+        setNewPegawai(initialPegawaiState);
         setModalType(null);
       };
 
@@ -403,6 +410,32 @@
         await saveToDb('ruangan', id, payload);
         showToast(ruanganData.id ? "Inventaris Ruangan Berhasil Diperbarui" : "Ruangan Baru Berhasil Ditambahkan");
         setModalType(null);
+      };
+
+      const handleRuanganImageUpload = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const MAX_WIDTH = 800; // Kompresi agar aman disimpan di Firestore
+            let scaleSize = 1;
+            if (img.width > MAX_WIDTH) {
+              scaleSize = MAX_WIDTH / img.width;
+            }
+            canvas.width = img.width * scaleSize;
+            canvas.height = img.height * scaleSize;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.7); // Kualitas 70%
+            setRuanganData({ ...ruanganData, foto: dataUrl });
+          }
+          img.src = event.target.result;
+        };
+        reader.readAsDataURL(file);
       };
 
       const handleSaveStok = async (e) => {
@@ -448,6 +481,16 @@
 
       const downloadPDF = () => window.print();
 
+      // Calculation variables for Dashboard
+      const statusPNS = pegawai.filter(p => p.status === 'PNS').length;
+      const statusPPPK = pegawai.filter(p => p.status === 'PPPK').length;
+      const statusPPPKPW = pegawai.filter(p => p.status === 'PPPK PW').length;
+
+      const pProkopim = pegawai.filter(p => p.penempatan === 'Bagian Prokopim').length;
+      const pProtokol = pegawai.filter(p => p.penempatan === 'Sub Bagian Protokol').length;
+      const pKomunikasi = pegawai.filter(p => p.penempatan === 'Sub Bagian Komunikasi Pimpinan').length;
+      const pDokumentasi = pegawai.filter(p => p.penempatan === 'Sub Bagian Dokumentasi Pimpinan').length;
+
       // --- UI Views ---
 
       if (view === 'login') {
@@ -462,7 +505,7 @@
                 <p className="text-gray-500 text-sm mt-2 leading-relaxed">Sistem Informasi Aset Bagian Protokol dan Komunikasi Pimpinan</p>
               </div>
               <form onSubmit={handleLogin}>
-                <Input label="Email Aktif" type="email" placeholder="contoh@email.com" value={loginData.identifier} onChange={(val) => setLoginData({...loginData, identifier: val})} required />
+                <Input label="Email Aktif" type="text" placeholder="contoh@email.com" value={loginData.identifier} onChange={(val) => setLoginData({...loginData, identifier: val})} required />
                 <Input label="Password" type="password" placeholder="••••••••" value={loginData.password} onChange={(val) => setLoginData({...loginData, password: val})} required />
                 <Button type="submit" className="w-full mt-4">Masuk</Button>
               </form>
@@ -551,21 +594,41 @@
                 <Input label="Tahun Perolehan" type="number" value={barangData.tahun} onChange={(val) => setBarangData({...barangData, tahun: val})} required />
                 <Select label="Kondisi" value={barangData.kondisi} onChange={(val) => setBarangData({...barangData, kondisi: val})} options={['Baik', 'Rusak Ringan', 'Rusak Berat']} required />
               </div>
+              <div className="grid grid-cols-2 gap-4">
+                <Select 
+                  label="Pemegang / Penanggung Jawab" 
+                  value={barangData.pemegang} 
+                  onChange={(val) => setBarangData({...barangData, pemegang: val})} 
+                  options={pegawai.map(p => ({ label: `${p.nama} (${p.jabatan})`, value: p.nama }))}
+                  placeholder="Pilih Pemegang/Penanggung Jawab"
+                  required 
+                />
+                <Input label="Lokasi Barang" value={barangData.lokasi} onChange={(val) => setBarangData({...barangData, lokasi: val})} required placeholder="Cth: Ruang Rapat Utama" />
+              </div>
               <Select 
                 label="Status" 
                 value={barangData.status} 
-                onChange={(val) => setBarangData({...barangData, status: val})} 
-                options={['Aktif', 'Dipinjamkan', 'Maintenance', 'Dihapuskan', 'Tidak Diketahui']} 
+                onChange={(val) => setBarangData({...barangData, status: val, peminjamNama: '', peminjamNip: '', peminjamJabatan: ''})} 
+                options={['Baru', 'Aktif', 'Dipinjamkan', 'Maintenance', 'Dihapuskan', 'Tidak Diketahui']} 
                 required 
               />
-              <Select 
-                label="Pemegang / Penanggung Jawab" 
-                value={barangData.pemegang} 
-                onChange={(val) => setBarangData({...barangData, pemegang: val})} 
-                options={pegawai.map(p => ({ label: `${p.nama} (${p.jabatan})`, value: p.nama }))}
-                placeholder="Pilih Pemegang/Penanggung Jawab"
-                required 
-              />
+              
+              {barangData.status === 'Dipinjamkan' && (
+                <div className="bg-orange-50 p-4 rounded-lg border border-orange-200 mb-4 animate-in fade-in zoom-in duration-300">
+                  <h4 className="font-bold text-sm text-orange-800 mb-3">Informasi Detail</h4>
+                  <Input 
+                    label="Nama" 
+                    value={barangData.peminjamNama} 
+                    onChange={(val) => setBarangData({...barangData, peminjamNama: val})} 
+                    placeholder="Masukkan nama"
+                    required 
+                  />
+                  <div className="grid grid-cols-2 gap-4">
+                    <Input label="NIP" value={barangData.peminjamNip} onChange={(val) => setBarangData({...barangData, peminjamNip: val})} placeholder="Masukkan NIP" required />
+                    <Input label="Jabatan" value={barangData.peminjamJabatan} onChange={(val) => setBarangData({...barangData, peminjamJabatan: val})} placeholder="Masukkan jabatan" required />
+                  </div>
+                </div>
+              )}
               <Button type="submit" className="w-full mt-4">Simpan Data Aset</Button>
             </form>
           </Modal>
@@ -574,6 +637,19 @@
             <form onSubmit={handleSaveRuangan}>
               <Input label="Nama Ruangan" value={ruanganData.nama} onChange={(val) => setRuanganData({...ruanganData, nama: val})} required />
               
+              <div className="mb-4">
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Foto Ruangan (Opsional)</label>
+                <input type="file" accept="image/*" onChange={handleRuanganImageUpload} className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white text-sm" />
+                {ruanganData.foto && (
+                  <div className="mt-2 relative w-full h-40 rounded-lg overflow-hidden border border-gray-200">
+                    <img src={ruanganData.foto} alt="Preview Ruangan" className="w-full h-full object-cover" />
+                    <button type="button" onClick={() => setRuanganData({...ruanganData, foto: ''})} className="absolute top-2 right-2 bg-red-500 text-white p-1.5 rounded-full hover:bg-red-600 transition-colors shadow-md">
+                      <X size={16} />
+                    </button>
+                  </div>
+                )}
+              </div>
+
               <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 mb-6">
                 <label className="block text-sm font-bold text-gray-700 mb-3">Daftar Barang dalam Ruangan</label>
                 <div className="grid grid-cols-12 gap-2 mb-4 items-end">
@@ -736,6 +812,7 @@
             </header>
 
             <div className="p-8 max-w-7xl mx-auto">
+              
               {view === 'dashboard' && (
                 <div className="space-y-8 print:hidden">
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
@@ -743,6 +820,48 @@
                     <Card title="Total Barang Aset" subtitle={barang.length} icon={ClipboardList} />
                     <Card title="Jumlah Ruangan" subtitle={ruangan.length} icon={Home} />
                     <Card title="Total Kendaraan" subtitle={kendaraan.length} icon={Car} />
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                      <h4 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4 border-b pb-3">Statistik Status Pegawai</h4>
+                      <div className="grid grid-cols-3 gap-4">
+                        <div className="bg-blue-50 rounded-lg p-4 text-center border border-blue-100">
+                          <p className="text-3xl font-bold text-blue-700">{statusPNS}</p>
+                          <p className="text-xs font-semibold text-blue-600 mt-1">PNS</p>
+                        </div>
+                        <div className="bg-emerald-50 rounded-lg p-4 text-center border border-emerald-100">
+                          <p className="text-3xl font-bold text-emerald-700">{statusPPPK}</p>
+                          <p className="text-xs font-semibold text-emerald-600 mt-1">PPPK</p>
+                        </div>
+                        <div className="bg-orange-50 rounded-lg p-4 text-center border border-orange-100">
+                          <p className="text-3xl font-bold text-orange-700">{statusPPPKPW}</p>
+                          <p className="text-xs font-semibold text-orange-600 mt-1">PPPK PW</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                      <h4 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4 border-b pb-3">Distribusi Penempatan</h4>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="flex justify-between items-center bg-gray-50 p-3 rounded-lg border border-gray-100">
+                          <span className="text-xs font-bold text-gray-600">Bagian Prokopim</span>
+                          <span className="font-bold text-gray-800 text-lg">{pProkopim}</span>
+                        </div>
+                        <div className="flex justify-between items-center bg-gray-50 p-3 rounded-lg border border-gray-100">
+                          <span className="text-xs font-bold text-gray-600">Subbag Protokol</span>
+                          <span className="font-bold text-gray-800 text-lg">{pProtokol}</span>
+                        </div>
+                        <div className="flex justify-between items-center bg-gray-50 p-3 rounded-lg border border-gray-100">
+                          <span className="text-xs font-bold text-gray-600">Subbag Komunikasi</span>
+                          <span className="font-bold text-gray-800 text-lg">{pKomunikasi}</span>
+                        </div>
+                        <div className="flex justify-between items-center bg-gray-50 p-3 rounded-lg border border-gray-100">
+                          <span className="text-xs font-bold text-gray-600">Subbag Dokumentasi</span>
+                          <span className="font-bold text-gray-800 text-lg">{pDokumentasi}</span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -788,47 +907,49 @@
               )}
 
               {view === 'pegawai' && (
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                  <div className="p-6 border-b border-gray-200 flex items-center justify-between print:hidden">
-                    <h3 className="font-bold text-lg">Daftar Pegawai Prokopim</h3>
-                    <Button variant="primary" onClick={() => { setNewPegawai({ nama: '', jabatan: '', nip: '', status: 'PNS', penempatan: 'Bagian Prokopim' }); setModalType('pegawai'); }}><Plus size={18} /> Tambah Pegawai</Button>
-                  </div>
-                  <div className="p-8 hidden print:block text-center border-b mb-4">
-                    <h1 className="text-2xl font-bold uppercase underline">DAFTAR PEGAWAI PROKOPIM</h1>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left whitespace-nowrap">
-                      <thead className="bg-gray-50 text-gray-500 uppercase text-xs font-bold print:bg-gray-100 print:text-black">
-                        <tr>
-                          <th className="px-6 py-4">Nama Lengkap</th>
-                          <th className="px-6 py-4">NIP</th>
-                          <th className="px-6 py-4">Jabatan</th>
-                          <th className="px-6 py-4">Status</th>
-                          <th className="px-6 py-4">Penempatan</th>
-                          <th className="px-6 py-4 print:hidden">Aksi</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {pegawai.length === 0 && (
-                          <tr><td colSpan="6" className="px-6 py-8 text-center text-gray-400 italic">Data Pegawai Masih Kosong</td></tr>
-                        )}
-                        {pegawai.map(p => (
-                          <tr key={p.id} className="hover:bg-gray-50 transition-colors">
-                            <td className="px-6 py-4 font-medium">{p.nama}</td>
-                            <td className="px-6 py-4 text-gray-600 font-mono">{p.nip}</td>
-                            <td className="px-6 py-4 text-gray-600">{p.jabatan}</td>
-                            <td className="px-6 py-4"><span className="px-2 py-1 bg-blue-50 text-blue-700 rounded-md text-xs font-bold">{p.status || '-'}</span></td>
-                            <td className="px-6 py-4 text-gray-600 text-sm">{p.penempatan || '-'}</td>
-                            <td className="px-6 py-4 print:hidden">
-                              <div className="flex gap-2">
-                                <button className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg" onClick={() => { setNewPegawai(p); setModalType('pegawai'); }}><Edit3 size={16} /></button>
-                                <button className="p-2 text-red-500 hover:bg-red-50 rounded-lg" onClick={() => { if(window.confirm('Yakin ingin menghapus pegawai ini?')) { deleteFromDb('pegawai', p.id); showToast("Pegawai dihapus"); } }}><Trash2 size={16} /></button>
-                              </div>
-                            </td>
+                <div className="space-y-6">
+                  <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                    <div className="p-6 border-b border-gray-200 flex items-center justify-between print:hidden">
+                      <h3 className="font-bold text-lg">Daftar Pegawai Prokopim</h3>
+                      <Button variant="primary" onClick={() => { setNewPegawai(initialPegawaiState); setModalType('pegawai'); }}><Plus size={18} /> Tambah Pegawai</Button>
+                    </div>
+                    <div className="p-8 hidden print:block text-center border-b mb-4">
+                      <h1 className="text-2xl font-bold uppercase underline">DAFTAR PEGAWAI PROKOPIM</h1>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left whitespace-nowrap">
+                        <thead className="bg-gray-50 text-gray-500 uppercase text-xs font-bold print:bg-gray-100 print:text-black">
+                          <tr>
+                            <th className="px-6 py-4">Nama Lengkap</th>
+                            <th className="px-6 py-4">NIP</th>
+                            <th className="px-6 py-4">Jabatan</th>
+                            <th className="px-6 py-4">Status</th>
+                            <th className="px-6 py-4">Penempatan</th>
+                            <th className="px-6 py-4 print:hidden">Aksi</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {pegawai.length === 0 && (
+                            <tr><td colSpan="6" className="px-6 py-8 text-center text-gray-400 italic">Data Pegawai Masih Kosong</td></tr>
+                          )}
+                          {pegawai.map(p => (
+                            <tr key={p.id} className="hover:bg-gray-50 transition-colors">
+                              <td className="px-6 py-4 font-medium">{p.nama}</td>
+                              <td className="px-6 py-4 text-gray-600 font-mono">{p.nip}</td>
+                              <td className="px-6 py-4 text-gray-600">{p.jabatan}</td>
+                              <td className="px-6 py-4"><span className="px-2 py-1 bg-blue-50 text-blue-700 rounded-md text-xs font-bold">{p.status || '-'}</span></td>
+                              <td className="px-6 py-4 text-gray-600 text-sm">{p.penempatan || '-'}</td>
+                              <td className="px-6 py-4 print:hidden">
+                                <div className="flex gap-2">
+                                  <button className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg" onClick={() => { setNewPegawai(p); setModalType('pegawai'); }}><Edit3 size={16} /></button>
+                                  <button className="p-2 text-red-500 hover:bg-red-50 rounded-lg" onClick={() => { if(window.confirm('Yakin ingin menghapus pegawai ini?')) { deleteFromDb('pegawai', p.id); showToast("Pegawai dihapus"); } }}><Trash2 size={16} /></button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </div>
               )}
@@ -852,7 +973,7 @@
                           <th className="px-6 py-4">Nama Barang</th>
                           <th className="px-6 py-4 text-center">Tahun</th>
                           <th className="px-6 py-4">Kondisi</th>
-                          <th className="px-6 py-4">Pemegang</th>
+                          <th className="px-6 py-4">Pemegang & Lokasi</th>
                           <th className="px-6 py-4">Status</th>
                           <th className="px-6 py-4 print:hidden">Aksi</th>
                         </tr>
@@ -871,71 +992,25 @@
                             <td className="px-6 py-4">
                               <span className={`px-3 py-1 rounded-full text-xs font-bold ${b.kondisi === 'Baik' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{b.kondisi}</span>
                             </td>
-                            <td className="px-6 py-4">{b.pemegang}</td>
-                            <td className="px-6 py-4 text-blue-600 font-medium">{b.status}</td>
+                            <td className="px-6 py-4">
+                              <p className="font-semibold text-gray-800">{b.pemegang}</p>
+                              <p className="text-xs text-gray-500 mt-1">Lokasi: {b.lokasi || '-'}</p>
+                            </td>
+                            <td className="px-6 py-4">
+                              <span className={`font-medium ${b.status === 'Dipinjamkan' ? 'text-orange-600' : 'text-blue-600'}`}>{b.status}</span>
+                              {b.status === 'Dipinjamkan' && (
+                                <div className="mt-1 text-xs text-gray-500 border-t border-gray-100 pt-1">
+                                  <p className="font-bold">Peminjam:</p>
+                                  <p>{b.peminjamNama}</p>
+                                  <p className="font-mono">{b.peminjamNip}</p>
+                                  <p>{b.peminjamJabatan}</p>
+                                </div>
+                              )}
+                            </td>
                             <td className="px-6 py-4 print:hidden">
                               <div className="flex gap-2">
                                 <button className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg" onClick={() => { setBarangData(b); setModalType('barang'); }}><Edit3 size={16} /></button>
                                 <button className="p-2 text-red-500 hover:bg-red-50 rounded-lg" onClick={() => { if(window.confirm('Yakin ingin menghapus barang ini?')) { deleteFromDb('barang', b.id); showToast("Barang dihapus"); } }}><Trash2 size={16} /></button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {view === 'kendaraan' && (
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                  <div className="p-6 border-b border-gray-200 flex items-center justify-between print:hidden">
-                    <h3 className="font-bold text-lg">Daftar Kendaraan Dinas</h3>
-                    <div className="flex gap-2">
-                      <Button variant="primary" onClick={() => { setKendaraanData(initialKendaraanState); setModalType('kendaraan'); }}><Plus size={18} /> Tambah Kendaraan</Button>
-                    </div>
-                  </div>
-                  <div className="p-8 hidden print:block text-center border-b mb-4">
-                    <h1 className="text-2xl font-bold uppercase underline">DAFTAR KENDARAAN DINAS</h1>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left whitespace-nowrap">
-                      <thead className="bg-gray-50 text-gray-500 uppercase text-xs font-bold print:bg-gray-100 print:text-black">
-                        <tr>
-                          <th className="px-4 py-4">Kendaraan</th>
-                          <th className="px-4 py-4">No. Polisi</th>
-                          <th className="px-4 py-4">No. Rangka / Mesin</th>
-                          <th className="px-4 py-4">Pemegang (Nama/NIP/Jabatan)</th>
-                          <th className="px-4 py-4">Kondisi</th>
-                          <th className="px-4 py-4 print:hidden text-center">Aksi</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100 text-sm">
-                        {kendaraan.length === 0 && (
-                          <tr><td colSpan="6" className="px-6 py-8 text-center text-gray-400 italic">Data Kendaraan Masih Kosong</td></tr>
-                        )}
-                        {kendaraan.map(k => (
-                          <tr key={k.id} className="hover:bg-gray-50 transition-colors">
-                            <td className="px-4 py-4">
-                              <p className="font-bold text-gray-800">{k.namaKendaraan}</p>
-                              <p className="text-xs text-gray-500">{k.jenis}</p>
-                            </td>
-                            <td className="px-4 py-4 font-mono font-bold text-blue-600">{k.noKendaraan}</td>
-                            <td className="px-4 py-4">
-                              <p className="text-xs text-gray-500">Rangka: <span className="font-mono text-gray-800">{k.noRangka}</span></p>
-                              <p className="text-xs text-gray-500 mt-1">Mesin: <span className="font-mono text-gray-800">{k.noMesin}</span></p>
-                            </td>
-                            <td className="px-4 py-4">
-                              <p className="font-semibold text-gray-800">{k.nama}</p>
-                              <p className="text-xs text-gray-500">{k.nip} • {k.jabatan}</p>
-                            </td>
-                            <td className="px-4 py-4">
-                              <span className={`px-2 py-1 rounded-full text-xs font-bold ${k.kondisi === 'Baik' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{k.kondisi}</span>
-                            </td>
-                            <td className="px-4 py-4 print:hidden text-center">
-                              <div className="flex gap-2 justify-center">
-                                <button className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg" onClick={() => { setKendaraanData(k); setModalType('kendaraan'); }}><Edit3 size={16} /></button>
-                                <button className="p-2 text-red-500 hover:bg-red-50 rounded-lg" onClick={() => { if(window.confirm('Yakin menghapus kendaraan ini?')) { deleteFromDb('kendaraan', k.id); showToast("Kendaraan dihapus"); } }}><Trash2 size={16} /></button>
                               </div>
                             </td>
                           </tr>
@@ -953,12 +1028,22 @@
                     
                     return (
                     <div key={r.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-lg transition-all cursor-pointer group print:shadow-none print:border print:mb-4 flex flex-col">
-                      <div className="p-6 bg-gradient-to-r from-blue-600 to-blue-500 text-white flex justify-between items-center print:from-white print:to-white print:text-black print:border-b">
-                        <div>
+                      <div className="relative p-6 text-white flex justify-between items-center print:text-black print:border-b min-h-[120px] overflow-hidden">
+                        <div className="absolute inset-0 z-0">
+                          {r.foto ? (
+                            <>
+                              <img src={r.foto} alt={r.nama} className="w-full h-full object-cover" />
+                              <div className="absolute inset-0 bg-black/60"></div>
+                            </>
+                          ) : (
+                            <div className="w-full h-full bg-gradient-to-r from-blue-600 to-blue-500"></div>
+                          )}
+                        </div>
+                        <div className="relative z-10">
                           <h4 className="font-bold text-lg">{r.nama}</h4>
                           <p className="text-blue-100 text-sm print:text-gray-500">Lokasi Internal Kantor</p>
                         </div>
-                        <Home size={24} className="opacity-50 print:hidden" />
+                        <Home size={24} className="relative z-10 opacity-50 print:hidden" />
                       </div>
                       <div className="p-6 flex-1 flex flex-col">
                         <div className="mb-4 flex-1">
@@ -1007,7 +1092,7 @@
                       </div>
                     </div>
                   )})}
-                  <div onClick={() => { setRuanganData({ id: null, nama: '', items: [] }); setModalType('ruangan'); }} className="border-2 border-dashed border-gray-300 rounded-xl flex items-center justify-center p-12 hover:border-blue-400 hover:bg-blue-50 transition-all cursor-pointer print:hidden">
+                  <div onClick={() => { setRuanganData({ id: null, nama: '', foto: '', items: [] }); setModalType('ruangan'); }} className="border-2 border-dashed border-gray-300 rounded-xl flex items-center justify-center p-12 hover:border-blue-400 hover:bg-blue-50 transition-all cursor-pointer print:hidden">
                      <div className="text-center">
                        <Plus className="mx-auto text-gray-400 mb-2" size={32} />
                        <p className="text-gray-500 font-medium">Tambah Inventaris Ruangan</p>
@@ -1083,6 +1168,62 @@
                             </tr>
                           );
                         })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {view === 'kendaraan' && (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                  <div className="p-6 border-b border-gray-200 flex items-center justify-between print:hidden">
+                    <h3 className="font-bold text-lg">Daftar Kendaraan Dinas</h3>
+                    <Button variant="primary" onClick={() => { setKendaraanData(initialKendaraanState); setModalType('kendaraan'); }}><Plus size={18} /> Tambah Kendaraan</Button>
+                  </div>
+                  <div className="p-8 hidden print:block text-center border-b mb-4">
+                    <h1 className="text-2xl font-bold uppercase underline">DAFTAR KENDARAAN DINAS PROKOPIM</h1>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left whitespace-nowrap">
+                      <thead className="bg-gray-50 text-gray-500 uppercase text-xs font-bold print:bg-gray-100 print:text-black">
+                        <tr>
+                          <th className="px-6 py-4">Nama Kendaraan</th>
+                          <th className="px-6 py-4">No. Polisi</th>
+                          <th className="px-6 py-4">Pemegang (Nama / NIP)</th>
+                          <th className="px-6 py-4">Jenis</th>
+                          <th className="px-6 py-4">No. Rangka / Mesin</th>
+                          <th className="px-6 py-4">Kondisi</th>
+                          <th className="px-6 py-4 print:hidden">Aksi</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {kendaraan.length === 0 && (
+                          <tr><td colSpan="7" className="px-6 py-8 text-center text-gray-400 italic">Data Kendaraan Masih Kosong</td></tr>
+                        )}
+                        {kendaraan.map(k => (
+                          <tr key={k.id} className="hover:bg-gray-50 transition-colors">
+                            <td className="px-6 py-4 font-bold text-gray-800">{k.namaKendaraan}</td>
+                            <td className="px-6 py-4 font-mono font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded text-center inline-block mt-3 ml-6">{k.noKendaraan}</td>
+                            <td className="px-6 py-4">
+                              <p className="font-medium">{k.pemegang}</p>
+                              <p className="text-xs text-gray-500 font-mono">{k.nip}</p>
+                            </td>
+                            <td className="px-6 py-4 text-gray-600">{k.jenis}</td>
+                            <td className="px-6 py-4 text-xs font-mono text-gray-500">
+                              <p>R: {k.noRangka}</p>
+                              <p>M: {k.noMesin}</p>
+                            </td>
+                            <td className="px-6 py-4">
+                              <span className={`px-2 py-1 rounded-md text-xs font-bold ${k.kondisi === 'Baik' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{k.kondisi}</span>
+                            </td>
+                            <td className="px-6 py-4 print:hidden">
+                              <div className="flex gap-2">
+                                <button className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg" onClick={() => { setKendaraanData(k); setModalType('kendaraan'); }}><Edit3 size={16} /></button>
+                                <button className="p-2 text-red-500 hover:bg-red-50 rounded-lg" onClick={() => { if(window.confirm('Yakin ingin menghapus kendaraan ini?')) { deleteFromDb('kendaraan', k.id); showToast("Kendaraan dihapus"); } }}><Trash2 size={16} /></button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
                       </tbody>
                     </table>
                   </div>
