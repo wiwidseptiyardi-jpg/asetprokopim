@@ -153,7 +153,7 @@
         <label className="block text-sm font-semibold text-gray-700 mb-1.5">{label}</label>
         <select
           value={value} onChange={(e) => onChange && onChange(e.target.value)}
-          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white transition-all"
+          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white transition-all text-sm"
           required={required}
         >
           <option value="" disabled={required}>{placeholder}</option>
@@ -200,9 +200,11 @@
       const [loginData, setLoginData] = useState({ identifier: '', password: '' });
       const [signupData, setSignupData] = useState({ nama: '', nip: '', jabatan: '', email: '', password: '' });
       
+      // Update state dengan KTP & Alamat
       const initialPegawaiState = { nama: '', jabatan: '', nip: '', status: 'PNS', penempatan: 'Bagian Prokopim', ktp: '', alamat: '' };
       const [newPegawai, setNewPegawai] = useState(initialPegawaiState);
       
+      // Update state dengan Kode Barang & NIBAR
       const initialBarangState = { 
         tahun: new Date().getFullYear().toString(), 
         kodeBarang: '',
@@ -242,10 +244,11 @@
         jenisSurat: 'PAKTA', // Default
         tanggal: new Date().toISOString().split('T')[0],
         customLogo: '',
-        pihak1Id: '', 
-        pihak2Id: '', 
+        pihak1Id: '', // Pihak Pertama (Biasanya Yang Menyerahkan/Pengurus Barang)
+        pihak2Id: '', // Pihak Kedua (Yang Menerima)
         barangId: '', 
         kendaraanId: '',
+        nomorSurat: '027/     /Prokopim/2026',
         referensiSurat: '',
         kuasaPenggunaBarangId: '', // Terintegrasi dgn Pegawai
         penggunaBarangId: '', // Terintegrasi dgn Pegawai
@@ -283,14 +286,20 @@
         return new Date(tgl).getFullYear();
       };
 
-      const getPegawaiObj = (id) => pegawai.find(p => p.id === id) || { nama: '..........................', nip: '..........................', jabatan: '..........................' };
+      const getPegawaiObj = (id) => pegawai.find(p => p.id === id) || { nama: '..........................', nip: '..........................', jabatan: '..........................', ktp: '', alamat: '' };
       const getBarangObj = (id) => barang.find(b => b.id === id) || { nama: '..........................', merk: '..........................', nomorSeri: '..........................', kondisi: '..........................' };
-      const getKendaraanObj = (id) => kendaraan.find(k => k.id === id) || { namaKendaraan: '..........................', noKendaraan: '..........................', noRangka: '..........................', noMesin: '..........................', tahun: '..........................' };
+      const getKendaraanObj = (id) => kendaraan.find(k => k.id === id) || { namaKendaraan: '..........................', noKendaraan: '..........................', noRangka: '..........................', noMesin: '..........................', tahun: '..........................', jenis: 'Roda 4' };
 
-      // Helper Khusus Pakta Integritas (Auto-fill Barang)
+      // Helper Khusus Pakta Integritas & BAST (Auto-fill Aset berdasarkan Pegawai Pihak 2/Pihak 1)
       const selectedPihak1 = getPegawaiObj(adminForm.pihak1Id);
-      const heldKendaraan = kendaraan.filter(k => k.pemegang === selectedPihak1.nama || k.nip === selectedPihak1.nip);
-      const heldBarang = barang.filter(b => b.peminjamNama === selectedPihak1.nama || b.peminjamNip === selectedPihak1.nip);
+      const selectedPihak2 = getPegawaiObj(adminForm.pihak2Id);
+      
+      // Auto-detect berdasarkan Pihak 2 (Yang Menerima / Pemakai) untuk BAST, tapi untuk Pakta biasanya Pihak 1 yang digunakan.
+      // Kita gabungkan logikanya, jika surat lampiran pakta gunakan pihak 1, jika BAST gunakan pihak 2.
+      const targetPihak = adminForm.jenisSurat === 'LAMPIRAN_PAKTA' || adminForm.jenisSurat === 'PAKTA' ? selectedPihak1 : selectedPihak2;
+
+      const heldKendaraan = kendaraan.filter(k => k.pemegang === targetPihak.nama || k.nip === targetPihak.nip);
+      const heldBarang = barang.filter(b => b.peminjamNama === targetPihak.nama || b.peminjamNip === targetPihak.nip);
       const allHeldItems = [...heldKendaraan.map(k => ({...k, isKendaraan: true})), ...heldBarang.map(b => ({...b, isKendaraan: false}))];
 
       const kuasaObj = getPegawaiObj(adminForm.kuasaPenggunaBarangId);
@@ -456,22 +465,6 @@
 
       const handleUnassignBarang = async (b) => { await saveToDb('barang', b.id, {...b, status: 'Aktif', peminjamNama: '', peminjamNip: '', peminjamJabatan: ''}); showToast('Aset ditarik kembali'); };
 
-      const handleDeleteAllBarang = async () => {
-        try {
-          if (!firebaseUser || !db) {
-            setBarang([]);
-          } else {
-            for (const b of barang) {
-              const docRef = doc(db, 'artifacts', appId, 'users', firebaseUser.uid, 'barang', b.id.toString());
-              await deleteDoc(docRef);
-            }
-          }
-          showToast("Semua data barang berhasil dikosongkan.");
-        } catch(e) {
-          showToast("Gagal mengosongkan data.");
-        }
-      };
-
       // --- Media & Utilities ---
       const handleImageCompress = (file, callback) => {
         const reader = new FileReader();
@@ -557,29 +550,29 @@
       const renderBarangRows = (items) => {
         return items.map(b => (
           <tr key={b.id} className="hover:bg-gray-50 transition-colors print:break-inside-avoid">
-            <td className="px-6 py-4 print-hide">{b.foto ? <img src={b.foto} className="w-12 h-12 object-cover rounded border" /> : <div className="w-12 h-12 bg-gray-100 border flex items-center justify-center text-xs text-gray-400">Kosong</div>}</td>
-            <td className="px-6 py-4">
+            <td className="px-3 py-2 print-hide">{b.foto ? <img src={b.foto} className="w-10 h-10 object-cover rounded border" /> : <div className="w-10 h-10 bg-gray-100 border flex items-center justify-center text-[10px] text-gray-400">Kosong</div>}</td>
+            <td className="px-3 py-2 text-xs">
               <p className="font-bold text-gray-800">{b.nama}</p>
-              {b.nomorSeri && <p className="text-xs text-gray-500 font-mono mt-0.5">SN: {b.nomorSeri}</p>}
-              {(b.kodeBarang || b.nibar) && <p className="text-xs text-blue-600 font-mono mt-0.5">Kode: {b.kodeBarang || '-'} | NIBAR: {b.nibar || '-'}</p>}
+              {b.nomorSeri && <p className="text-[10px] text-gray-500 font-mono mt-0.5">SN: {b.nomorSeri}</p>}
+              {(b.kodeBarang || b.nibar) && <p className="text-[10px] text-blue-600 font-mono mt-0.5">Kode: {b.kodeBarang || '-'} | NIBAR: {b.nibar || '-'}</p>}
             </td>
-            <td className="px-6 py-4 text-center">{b.tahun}</td>
-            <td className="px-6 py-4"><span className={`px-2 py-1 rounded text-xs font-bold ${b.kondisi === 'Baik' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{b.kondisi}</span></td>
-            <td className="px-6 py-4"><p className="font-medium text-gray-800">{b.merk || '-'}</p><p className="text-xs text-gray-500">Lokasi: {b.lokasi || '-'}</p></td>
-            <td className="px-6 py-4">
+            <td className="px-3 py-2 text-center text-xs">{b.tahun}</td>
+            <td className="px-3 py-2 text-xs"><span className={`px-2 py-1 rounded text-[10px] font-bold ${b.kondisi === 'Baik' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{b.kondisi}</span></td>
+            <td className="px-3 py-2 text-xs"><p className="font-medium text-gray-800">{b.merk || '-'}</p><p className="text-[10px] text-gray-500">Lokasi: {b.lokasi || '-'}</p></td>
+            <td className="px-3 py-2 text-xs">
               <span className={`font-medium ${b.status === 'Dipinjamkan' ? 'text-orange-600' : 'text-blue-600'}`}>{b.status}</span>
               {/* Jika berstatus dipinjamkan, maka akan menampilkan peminjam dan lokasi terkininya */}
               {b.status === 'Dipinjamkan' && b.peminjamNama ? (
-                  <div className="mt-1 text-xs text-gray-500 border-t pt-1"><p className="font-bold">Peminjam:</p><p>{b.peminjamNama}</p>{b.lokasiSaatIni && <p>Di: {b.lokasiSaatIni}</p>}</div>
+                  <div className="mt-1 text-[10px] text-gray-500 border-t pt-1"><p className="font-bold">Peminjam:</p><p className="truncate max-w-[120px]">{b.peminjamNama}</p>{b.lokasiSaatIni && <p className="truncate max-w-[120px]">Di: {b.lokasiSaatIni}</p>}</div>
               ) : (
                 /* Jika tidak, namun memiliki pemegang dari menu "Pemegang Aset", maka tampilkan Pemegang */
-                b.peminjamNama && <div className="mt-1 text-xs text-gray-500 border-t pt-1"><p className="font-bold">Pemegang:</p><p>{b.peminjamNama}</p></div>
+                b.peminjamNama && <div className="mt-1 text-[10px] text-gray-500 border-t pt-1"><p className="font-bold">Pemegang:</p><p className="truncate max-w-[120px]">{b.peminjamNama}</p></div>
               )}
             </td>
-            <td className="px-6 py-4 print-hide">
-              <div className="flex gap-2">
-                <button className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg" onClick={() => { setBarangData(b); setModalType('barang'); }}><Edit3 size={16} /></button>
-                <button className="p-2 text-red-500 hover:bg-red-50 rounded-lg" onClick={() => askConfirm("Yakin ingin menghapus aset barang ini?", () => deleteFromDb('barang', b.id))}><Trash2 size={16} /></button>
+            <td className="px-3 py-2 print-hide text-xs">
+              <div className="flex gap-1">
+                <button className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" onClick={() => { setBarangData(b); setModalType('barang'); }}><Edit3 size={14} /></button>
+                <button className="p-1.5 text-red-500 hover:bg-red-50 rounded" onClick={() => { if(window.confirm('Yakin menghapus aset ini?')) deleteFromDb('barang', b.id); }}><Trash2 size={14} /></button>
               </div>
             </td>
           </tr>
@@ -587,12 +580,22 @@
       };
 
       // --- Stats ---
-      const statusPNS = pegawai.filter(p => p.status === 'PNS').length; const statusPPPK = pegawai.filter(p => p.status === 'PPPK').length; const statusPPPKPW = pegawai.filter(p => p.status === 'PPPK PW').length;
+      const statusPNS = pegawai.filter(p => p.status === 'PNS').length; 
+      const statusPPPK = pegawai.filter(p => p.status === 'PPPK').length; 
+      const statusPPPKPW = pegawai.filter(p => p.status === 'PPPK PW').length;
+      const statusOutsourcing = pegawai.filter(p => p.status === 'Outsourcing').length;
+      
       const pProkopim = pegawai.filter(p => p.penempatan === 'Bagian Prokopim').length; const pProtokol = pegawai.filter(p => p.penempatan === 'Sub Bagian Protokol').length; const pKomunikasi = pegawai.filter(p => p.penempatan === 'Sub Bagian Komunikasi Pimpinan').length; const pDokumentasi = pegawai.filter(p => p.penempatan === 'Sub Bagian Dokumentasi Pimpinan').length;
       const kRoda2 = kendaraan.filter(k => k.jenis && k.jenis.includes('Roda 2')).length; const kRoda4 = kendaraan.filter(k => k.jenis && k.jenis.includes('Roda 4')).length;
 
       // --- Setup Print Variables ---
       const isLandscapeView = adminForm.jenisSurat === 'LAMPIRAN_PAKTA';
+
+      const SidebarItem = ({ id, icon: Icon, label }) => (
+        <button onClick={() => setView(id)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 print-hide ${view === id ? "bg-blue-600 text-white shadow-md" : "text-gray-500 hover:bg-blue-50 hover:text-blue-600"}`}>
+          <Icon size={20} /><span className="font-medium">{label}</span>
+        </button>
+      );
 
       // --- Login & Signup Views ---
       if (view === 'login') {
@@ -632,12 +635,6 @@
         );
       }
 
-      const SidebarItem = ({ id, icon: Icon, label }) => (
-        <button onClick={() => setView(id)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 print-hide ${view === id ? "bg-blue-600 text-white shadow-md" : "text-gray-500 hover:bg-blue-50 hover:text-blue-600"}`}>
-          <Icon size={20} /><span className="font-medium">{label}</span>
-        </button>
-      );
-
       // --- Main Layout ---
       return (
         <div className="flex min-h-screen bg-gray-50 text-gray-800 font-sans print:bg-white relative">
@@ -653,15 +650,6 @@
             `}</style>
           )}
 
-          {confirmDialog.isOpen && (
-            <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm print-hide">
-              <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm text-center animate-in zoom-in duration-200">
-                <AlertCircle className="mx-auto text-red-500 mb-4" size={48} /><h3 className="text-lg font-bold text-gray-800 mb-2">Konfirmasi Tindakan</h3><p className="text-gray-600 mb-6">{confirmDialog.message}</p>
-                <div className="flex justify-center gap-3"><Button variant="secondary" onClick={() => setConfirmDialog({isOpen: false, message: '', onConfirm: null})}>Batal</Button><Button variant="danger" onClick={() => { if(confirmDialog.onConfirm) confirmDialog.onConfirm(); setConfirmDialog({isOpen: false, message: '', onConfirm: null}); }}>Ya, Hapus</Button></div>
-              </div>
-            </div>
-          )}
-
           {/* Modals Data Dasar */}
           <Modal isOpen={modalType === 'pegawai'} onClose={() => setModalType(null)} title={newPegawai.id ? "Edit Pegawai" : "Tambah Pegawai Baru"}>
             <form onSubmit={handleSavePegawai}>
@@ -672,7 +660,7 @@
                 <Input label="Nomor KTP" value={newPegawai.ktp || ''} onChange={(val) => setNewPegawai({...newPegawai, ktp: val})} />
               </div>
               <Input label="Alamat Lengkap" value={newPegawai.alamat || ''} onChange={(val) => setNewPegawai({...newPegawai, alamat: val})} />
-              <Select label="Status" value={newPegawai.status} onChange={(val) => setNewPegawai({...newPegawai, status: val})} options={['PNS', 'PPPK', 'PPPK PW']} required />
+              <Select label="Status" value={newPegawai.status} onChange={(val) => setNewPegawai({...newPegawai, status: val})} options={['PNS', 'PPPK', 'PPPK PW', 'Outsourcing']} required />
               <Select label="Penempatan" value={newPegawai.penempatan} onChange={(val) => setNewPegawai({...newPegawai, penempatan: val})} options={['Bagian Prokopim', 'Sub Bagian Protokol', 'Sub Bagian Komunikasi Pimpinan', 'Sub Bagian Dokumentasi Pimpinan']} required />
               <Button type="submit" className="w-full mt-4">Simpan Data Pegawai</Button>
             </form>
@@ -692,7 +680,7 @@
               <div className="grid grid-cols-2 gap-4"><Input label="Tahun Perolehan" type="number" value={barangData.tahun} onChange={(val) => setBarangData({...barangData, tahun: val})} required /><Select label="Kondisi" value={barangData.kondisi} onChange={(val) => setBarangData({...barangData, kondisi: val})} options={['Baik', 'Rusak Ringan', 'Rusak Berat']} required /></div>
               <div className="grid grid-cols-2 gap-4">
                 <Select label="Status" value={barangData.status} onChange={(val) => setBarangData({...barangData, status: val, peminjamNama: '', peminjamNip: '', peminjamJabatan: '', lokasiSaatIni: ''})} options={['Baru', 'Aktif', 'Dipinjamkan', 'Maintenance', 'Dihapuskan']} required />
-                <Select label="Lokasi Penyimpanan Barang" value={barangData.lokasi} onChange={(val) => setBarangData({...barangData, lokasi: val})} options={['Gudang', 'Ruang Dokumentasi Pimpinan', 'Ruang Komunikasi Pimpinan', 'Ruang Protokol', 'Ruang Kepala Bagian', 'Ruang Rapat', 'Ruang Resepsionis', 'Dapur', 'Kamar Mandi', 'Mushola', 'Ruang Tengah']} required placeholder="Pilih Lokasi" />
+                <Select label="Lokasi Penyimpanan Barang" value={barangData.lokasi} onChange={(val) => setBarangData({...barangData, lokasi: val})} options={['Gudang', 'Ruang Dokumentasi Pimpinan', 'Ruang Komunikasi Pimpinan', 'Ruang Protokol', 'Ruang Kepala Bagian', 'Ruang Rapat', 'Ruang Resepsionis', 'Dapur', 'Kamar Mandi', 'Mushola', 'Ruang Tengah', 'Rumah']} required placeholder="Pilih Lokasi" />
               </div>
               
               <Select label="Pegawai Pemegang Barang (Opsional)" value={barangData.peminjamNama} onChange={(val) => { const pg = pegawai.find(p => p.nama === val); setBarangData({...barangData, peminjamNama: val, peminjamNip: pg?pg.nip:'', peminjamJabatan: pg?pg.jabatan:''}); }} options={[{value: '', label: '-- Kosong / Tidak Ada --'}, ...pegawai.map(p => ({value: p.nama, label: p.nama}))]} />
@@ -815,7 +803,12 @@
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm col-span-1">
                       <h4 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4 border-b pb-3">Status Pegawai</h4>
-                      <div className="grid grid-cols-3 gap-2"><div className="bg-blue-50 rounded-lg p-3 text-center border border-blue-100"><p className="text-2xl font-bold text-blue-700">{statusPNS}</p><p className="text-[10px] font-semibold text-blue-600 mt-1 uppercase">PNS</p></div><div className="bg-emerald-50 rounded-lg p-3 text-center border border-emerald-100"><p className="text-2xl font-bold text-emerald-700">{statusPPPK}</p><p className="text-[10px] font-semibold text-emerald-600 mt-1 uppercase">PPPK</p></div><div className="bg-orange-50 rounded-lg p-3 text-center border border-orange-100"><p className="text-2xl font-bold text-orange-700">{statusPPPKPW}</p><p className="text-[10px] font-semibold text-orange-600 mt-1 uppercase">PPPK PW</p></div></div>
+                      <div className="grid grid-cols-4 gap-2">
+                         <div className="bg-blue-50 rounded-lg p-3 text-center border border-blue-100"><p className="text-xl font-bold text-blue-700">{statusPNS}</p><p className="text-[9px] font-semibold text-blue-600 mt-1 uppercase">PNS</p></div>
+                         <div className="bg-emerald-50 rounded-lg p-3 text-center border border-emerald-100"><p className="text-xl font-bold text-emerald-700">{statusPPPK}</p><p className="text-[9px] font-semibold text-emerald-600 mt-1 uppercase">PPPK</p></div>
+                         <div className="bg-orange-50 rounded-lg p-3 text-center border border-orange-100"><p className="text-xl font-bold text-orange-700">{statusPPPKPW}</p><p className="text-[9px] font-semibold text-orange-600 mt-1 uppercase">PPPK PW</p></div>
+                         <div className="bg-purple-50 rounded-lg p-3 text-center border border-purple-100"><p className="text-xl font-bold text-purple-700">{statusOutsourcing}</p><p className="text-[9px] font-semibold text-purple-600 mt-1 uppercase">Out</p></div>
+                      </div>
                     </div>
                     <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm col-span-1">
                       <h4 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4 border-b pb-3">Penempatan Pegawai</h4>
@@ -832,35 +825,37 @@
               {view === 'pegawai' && (
                 <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                   <div className="p-6 border-b flex justify-between print-hide"><h3 className="font-bold text-lg">Daftar Pegawai</h3><Button onClick={() => { setNewPegawai(initialPegawaiState); setModalType('pegawai'); }}><Plus size={18}/> Tambah</Button></div>
-                  <table className="w-full text-left">
-                    <thead className="bg-gray-50 text-gray-500 uppercase text-xs font-bold">
-                      <tr>
-                        <th className="px-6 py-4">Nama</th>
-                        <th className="px-6 py-4">NIP</th>
-                        <th className="px-6 py-4">No. KTP</th>
-                        <th className="px-6 py-4">Jabatan</th>
-                        <th className="px-6 py-4">Alamat</th>
-                        <th className="px-6 py-4 print-hide">Aksi</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {pegawai.map(p => (
-                        <tr key={p.id} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 font-bold">{p.nama}</td>
-                          <td className="px-6 py-4 font-mono">{p.nip}</td>
-                          <td className="px-6 py-4 font-mono text-gray-600">{p.ktp || '-'}</td>
-                          <td className="px-6 py-4">{p.jabatan}</td>
-                          <td className="px-6 py-4 text-gray-600 max-w-[200px] truncate" title={p.alamat}>{p.alamat || '-'}</td>
-                          <td className="px-6 py-4 print-hide">
-                            <div className="flex gap-2">
-                              <button className="text-blue-600 p-2" onClick={() => { setNewPegawai(p); setModalType('pegawai'); }}><Edit3 size={16}/></button>
-                              <button className="text-red-500 p-2" onClick={() => askConfirm("Hapus pegawai ini?", () => deleteFromDb('pegawai', p.id))}><Trash2 size={16}/></button>
-                            </div>
-                          </td>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs whitespace-nowrap">
+                      <thead className="bg-gray-50 text-gray-500 uppercase text-[10px] font-bold border-b">
+                        <tr>
+                          <th className="px-4 py-3">Nama</th>
+                          <th className="px-4 py-3">NIP</th>
+                          <th className="px-4 py-3">No. KTP</th>
+                          <th className="px-4 py-3">Jabatan</th>
+                          <th className="px-4 py-3">Alamat</th>
+                          <th className="px-4 py-3 print-hide">Aksi</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {pegawai.map(p => (
+                          <tr key={p.id} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 font-bold text-gray-800">{p.nama}</td>
+                            <td className="px-4 py-3 font-mono text-gray-600">{p.nip}</td>
+                            <td className="px-4 py-3 font-mono text-gray-600">{p.ktp || '-'}</td>
+                            <td className="px-4 py-3">{p.jabatan}</td>
+                            <td className="px-4 py-3 text-gray-600 max-w-[200px] truncate" title={p.alamat}>{p.alamat || '-'}</td>
+                            <td className="px-4 py-3 print-hide">
+                              <div className="flex gap-1">
+                                <button className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" onClick={() => { setNewPegawai(p); setModalType('pegawai'); }}><Edit3 size={14}/></button>
+                                <button className="p-1.5 text-red-500 hover:bg-red-50 rounded" onClick={() => { if(window.confirm("Yakin ingin menghapus pegawai ini?")) deleteFromDb('pegawai', p.id); }}><Trash2 size={14}/></button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               )}
 
@@ -873,24 +868,23 @@
                       <Button variant="outline" onClick={downloadTemplateExcelBarang} className="bg-white text-sm h-10"><Download size={16} /> Template</Button>
                       <input type="file" accept=".xlsx, .csv" className="hidden" ref={fileInputRef} onChange={handleImportExcelBarang}/>
                       <Button variant="secondary" onClick={() => fileInputRef.current.click()} className="text-sm h-10"><Cloud size={16} /> Import Excel</Button>
-                      <Button variant="danger" onClick={() => askConfirm("PERINGATAN: Yakin ingin MENGHAPUS SEMUA DATA BARANG secara permanen? Data yang dihapus tidak bisa dikembalikan.", handleDeleteAllBarang)} className="text-sm h-10"><Trash2 size={16} /> Kosongkan Semua</Button>
                       <Button onClick={() => { setBarangData(initialBarangState); setModalType('barang'); }} className="text-sm h-10"><Plus size={18}/> Tambah</Button>
                     </div>
                   </div>
-                  <div className="p-6">{groupByBarang === '' ? (<div className="border rounded-lg overflow-x-auto"><table className="w-full text-left text-sm whitespace-nowrap"><thead className="bg-gray-50 text-gray-500 uppercase text-xs font-bold border-b"><tr><th className="px-6 py-4">Foto</th><th className="px-6 py-4">Barang & SN</th><th className="px-6 py-4 text-center">Tahun</th><th className="px-6 py-4">Kondisi</th><th className="px-6 py-4">Merk & Lokasi</th><th className="px-6 py-4">Status & Peminjam</th><th className="px-6 py-4 print-hide">Aksi</th></tr></thead><tbody className="divide-y divide-gray-100">{barang.length === 0 ? <tr><td colSpan="7" className="text-center py-8 text-gray-400 italic">Belum ada barang terdaftar</td></tr> : renderBarangRows(barang)}</tbody></table></div>) : (<div className="space-y-6">{[...new Set(barang.map(b => b[groupByBarang] || 'Tidak Diketahui'))].sort().map(groupVal => { const groupItems = barang.filter(b => (b[groupByBarang] || 'Tidak Diketahui') === groupVal); return (<div key={groupVal} className="border border-blue-200 rounded-xl overflow-hidden shadow-sm"><div className="bg-blue-50 px-6 py-3 font-bold text-blue-800 flex justify-between items-center border-b border-blue-100"><span className="uppercase text-sm tracking-wider">{groupByBarang}: {groupVal}</span><span className="bg-white px-3 py-1 rounded-full text-xs shadow-sm">{groupItems.length} Item</span></div><div className="overflow-x-auto"><table className="w-full text-left text-sm whitespace-nowrap"><thead className="bg-gray-50 text-gray-400 uppercase text-[10px] font-bold border-b"><tr><th className="px-6 py-2 print-hide">Foto</th><th className="px-6 py-2">Barang</th><th className="px-6 py-2 text-center">Tahun</th><th className="px-6 py-2">Kondisi</th><th className="px-6 py-2">Lokasi</th><th className="px-6 py-2">Status</th><th className="px-6 py-2 print-hide">Aksi</th></tr></thead><tbody className="divide-y divide-gray-100 bg-white">{renderBarangRows(groupItems)}</tbody></table></div></div>) })}</div>)}</div>
+                  <div className="p-0">{groupByBarang === '' ? (<div className="overflow-x-auto"><table className="w-full text-left text-xs whitespace-nowrap"><thead className="bg-gray-50 text-gray-500 uppercase text-[10px] font-bold border-b"><tr><th className="px-3 py-2">Foto</th><th className="px-3 py-2">Barang & SN</th><th className="px-3 py-2 text-center">Tahun</th><th className="px-3 py-2">Kondisi</th><th className="px-3 py-2">Merk & Lokasi</th><th className="px-3 py-2">Status & Pemegang</th><th className="px-3 py-2 print-hide">Aksi</th></tr></thead><tbody className="divide-y divide-gray-100">{barang.length === 0 ? <tr><td colSpan="7" className="text-center py-8 text-gray-400 italic">Belum ada barang terdaftar</td></tr> : renderBarangRows(barang)}</tbody></table></div>) : (<div className="space-y-6 p-6">{[...new Set(barang.map(b => b[groupByBarang] || 'Tidak Diketahui'))].sort().map(groupVal => { const groupItems = barang.filter(b => (b[groupByBarang] || 'Tidak Diketahui') === groupVal); return (<div key={groupVal} className="border border-blue-200 rounded-xl overflow-hidden shadow-sm"><div className="bg-blue-50 px-6 py-3 font-bold text-blue-800 flex justify-between items-center border-b border-blue-100"><span className="uppercase text-sm tracking-wider">{groupByBarang}: {groupVal}</span><span className="bg-white px-3 py-1 rounded-full text-xs shadow-sm">{groupItems.length} Item</span></div><div className="overflow-x-auto"><table className="w-full text-left text-xs whitespace-nowrap"><thead className="bg-gray-50 text-gray-400 uppercase text-[10px] font-bold border-b"><tr><th className="px-3 py-2 print-hide">Foto</th><th className="px-3 py-2">Barang</th><th className="px-3 py-2 text-center">Tahun</th><th className="px-3 py-2">Kondisi</th><th className="px-3 py-2">Lokasi</th><th className="px-3 py-2">Status</th><th className="px-3 py-2 print-hide">Aksi</th></tr></thead><tbody className="divide-y divide-gray-100 bg-white">{renderBarangRows(groupItems)}</tbody></table></div></div>) })}</div>)}</div>
                 </div>
               )}
 
               {view === 'pemegang' && (
                 <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                   <div className="p-6 border-b print-hide"><h3 className="font-bold text-lg">Distribusi & Pemegang Aset</h3></div>
-                  <table className="w-full text-left"><thead className="bg-gray-50 text-gray-500 uppercase text-xs font-bold"><tr><th className="px-6 py-4">Nama Pegawai</th><th className="px-6 py-4">Jabatan</th><th className="px-6 py-4 text-center">Jml Aset Dipegang</th><th className="px-6 py-4 text-center print-hide">Aksi</th></tr></thead><tbody className="divide-y divide-gray-100">{pegawai.map(p => { const count = barang.filter(b => b.peminjamNama === p.nama).length; return (<tr key={p.id} className="hover:bg-gray-50"><td className="px-6 py-4 font-bold">{p.nama}</td><td className="px-6 py-4">{p.jabatan}</td><td className="px-6 py-4 text-center"><span className="bg-blue-100 text-blue-800 font-bold px-3 py-1 rounded-full">{count} Item</span></td><td className="px-6 py-4 text-center print-hide"><Button onClick={() => { setSelectedPegawai(p); setModalType('assign'); }} variant="outline" className="text-xs h-8 mx-auto">Kelola Distribusi</Button></td></tr>)})}</tbody></table>
+                  <table className="w-full text-left text-xs"><thead className="bg-gray-50 text-gray-500 uppercase text-[10px] font-bold border-b"><tr><th className="px-4 py-3">Nama Pegawai</th><th className="px-4 py-3">Jabatan</th><th className="px-4 py-3 text-center">Jml Aset Dipegang</th><th className="px-4 py-3 text-center print-hide">Aksi</th></tr></thead><tbody className="divide-y divide-gray-100">{pegawai.map(p => { const count = barang.filter(b => b.peminjamNama === p.nama).length; return (<tr key={p.id} className="hover:bg-gray-50"><td className="px-4 py-3 font-bold text-gray-800">{p.nama}</td><td className="px-4 py-3 text-gray-600">{p.jabatan}</td><td className="px-4 py-3 text-center"><span className="bg-blue-100 text-blue-800 font-bold px-3 py-1 rounded-full">{count} Item</span></td><td className="px-4 py-3 text-center print-hide"><Button onClick={() => { setSelectedPegawai(p); setModalType('assign'); }} variant="outline" className="text-[10px] h-7 mx-auto px-2 py-1">Kelola Distribusi</Button></td></tr>)})}</tbody></table>
                 </div>
               )}
 
               {view === 'ruangan' && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {ruangan.map(r => (<div key={r.id} className="bg-white rounded-xl border overflow-hidden shadow-sm flex flex-col"><div className="relative p-6 text-white min-h-[120px] flex items-center"><div className="absolute inset-0 z-0">{r.foto ? <><img src={r.foto} className="w-full h-full object-cover"/><div className="absolute inset-0 bg-black/60"></div></> : <div className="w-full h-full bg-blue-600"></div>}</div><div className="relative z-10"><h4 className="font-bold text-lg">{r.nama}</h4></div></div><div className="p-6 flex-1"><table className="w-full text-sm text-left"><thead className="text-gray-500 border-b border-dashed"><tr><th className="py-1">Barang</th><th className="py-1 text-center">Jml</th><th className="py-1 text-right">Kondisi</th></tr></thead><tbody>{r.items?.map(i => <tr key={i.id} className="border-b border-gray-50"><td className="py-2">{i.nama}</td><td className="py-2 text-center">{i.jumlah}</td><td className="py-2 text-right">{i.kondisi}</td></tr>)}</tbody></table></div><div className="px-6 py-4 bg-gray-50 border-t flex gap-2 print-hide"><button onClick={() => { setRuanganData(r); setModalType('ruangan'); }} className="flex-1 py-2 bg-white border text-blue-600 rounded flex items-center justify-center gap-2"><Edit3 size={16}/> Edit</button><button onClick={() => askConfirm('Hapus seluruh ruangan ini?', () => deleteFromDb('ruangan', r.id))} className="flex-1 py-2 bg-white border text-red-600 rounded flex items-center justify-center gap-2"><Trash2 size={16}/> Hapus</button></div></div>))}
+                  {ruangan.map(r => (<div key={r.id} className="bg-white rounded-xl border overflow-hidden shadow-sm flex flex-col"><div className="relative p-6 text-white min-h-[120px] flex items-center"><div className="absolute inset-0 z-0">{r.foto ? <><img src={r.foto} className="w-full h-full object-cover"/><div className="absolute inset-0 bg-black/60"></div></> : <div className="w-full h-full bg-blue-600"></div>}</div><div className="relative z-10"><h4 className="font-bold text-lg">{r.nama}</h4></div></div><div className="p-6 flex-1"><table className="w-full text-sm text-left"><thead className="text-gray-500 border-b border-dashed"><tr><th className="py-1">Barang</th><th className="py-1 text-center">Jml</th><th className="py-1 text-right">Kondisi</th></tr></thead><tbody>{r.items?.map(i => <tr key={i.id} className="border-b border-gray-50"><td className="py-2">{i.nama}</td><td className="py-2 text-center">{i.jumlah}</td><td className="py-2 text-right">{i.kondisi}</td></tr>)}</tbody></table></div><div className="px-6 py-4 bg-gray-50 border-t flex gap-2 print-hide"><button onClick={() => { setRuanganData(r); setModalType('ruangan'); }} className="flex-1 py-2 bg-white border text-blue-600 rounded flex items-center justify-center gap-2"><Edit3 size={16}/> Edit</button><button onClick={() => { if(window.confirm('Hapus seluruh ruangan ini?')) deleteFromDb('ruangan', r.id); }} className="flex-1 py-2 bg-white border text-red-600 rounded flex items-center justify-center gap-2"><Trash2 size={16}/> Hapus</button></div></div>))}
                   <div onClick={() => { setRuanganData({id:null, nama:'', foto:'', items:[]}); setModalType('ruangan'); }} className="border-2 border-dashed border-gray-300 rounded-xl flex items-center justify-center p-12 hover:bg-blue-50 cursor-pointer text-center print-hide"><Plus className="mx-auto text-gray-400 mb-2" size={32}/><p className="font-medium text-gray-500">Tambah Ruangan</p></div>
                 </div>
               )}
@@ -898,14 +892,14 @@
               {view === 'kendaraan' && (
                 <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                   <div className="p-6 border-b flex justify-between print-hide"><h3 className="font-bold text-lg">Kendaraan Dinas</h3><Button onClick={() => { setKendaraanData(initialKendaraanState); setModalType('kendaraan'); }}><Plus size={18}/> Tambah</Button></div>
-                  <div className="overflow-x-auto"><table className="w-full text-left whitespace-nowrap text-sm"><thead className="bg-gray-50 text-gray-500 uppercase text-xs font-bold border-b"><tr><th className="px-6 py-4">Kendaraan</th><th className="px-6 py-4">No. Polisi / Detail</th><th className="px-6 py-4">Pemegang</th><th className="px-6 py-4">Jenis</th><th className="px-6 py-4">Tgl Pajak</th><th className="px-6 py-4 print-hide">Aksi</th></tr></thead><tbody className="divide-y divide-gray-100">{kendaraan.map(k => (<tr key={k.id} className="hover:bg-gray-50"><td className="px-6 py-4"><p className="font-bold text-gray-800">{k.namaKendaraan}</p><p className="text-xs text-gray-500">Tahun: {k.tahun}</p></td><td className="px-6 py-4"><span className="font-mono font-bold text-blue-700 bg-blue-50 px-3 py-1 rounded">{k.noKendaraan}</span><div className="mt-2 text-xs text-gray-500"><p>Rangka: {k.noRangka || '-'}</p><p>Mesin: {k.noMesin || '-'}</p></div></td><td className="px-6 py-4"><p className="font-medium">{k.pemegang}</p><p className="text-xs text-gray-500 font-mono">{k.nip}</p></td><td className="px-6 py-4">{k.jenis}</td><td className="px-6 py-4 font-mono">{k.tanggalPajak ? new Date(k.tanggalPajak).toLocaleDateString('id-ID', {day:'2-digit', month:'long', year:'numeric'}) : '-'}</td><td className="px-6 py-4 print-hide"><div className="flex gap-2"><button className="text-blue-600 p-2" onClick={() => { setKendaraanData(k); setModalType('kendaraan'); }}><Edit3 size={16}/></button><button className="text-red-500 p-2" onClick={() => askConfirm("Hapus kendaraan ini?", () => deleteFromDb('kendaraan', k.id))}><Trash2 size={16}/></button></div></td></tr>))}</tbody></table></div>
+                  <div className="overflow-x-auto"><table className="w-full text-left whitespace-nowrap text-xs"><thead className="bg-gray-50 text-gray-500 uppercase text-[10px] font-bold border-b"><tr><th className="px-4 py-3">Kendaraan</th><th className="px-4 py-3">No. Polisi / Detail</th><th className="px-4 py-3">Pemegang</th><th className="px-4 py-3">Jenis</th><th className="px-4 py-3">Tgl Pajak</th><th className="px-4 py-3 print-hide">Aksi</th></tr></thead><tbody className="divide-y divide-gray-100">{kendaraan.map(k => (<tr key={k.id} className="hover:bg-gray-50"><td className="px-4 py-3"><p className="font-bold text-gray-800">{k.namaKendaraan}</p><p className="text-[10px] text-gray-500">Tahun: {k.tahun}</p></td><td className="px-4 py-3"><span className="font-mono font-bold text-blue-700 bg-blue-50 px-2 py-1 rounded">{k.noKendaraan}</span><div className="mt-1 text-[10px] text-gray-500"><p>Rangka: {k.noRangka || '-'}</p><p>Mesin: {k.noMesin || '-'}</p></div></td><td className="px-4 py-3"><p className="font-medium text-gray-800">{k.pemegang}</p><p className="text-[10px] text-gray-500 font-mono">{k.nip}</p></td><td className="px-4 py-3 text-gray-600">{k.jenis}</td><td className="px-4 py-3 font-mono text-gray-600">{k.tanggalPajak ? new Date(k.tanggalPajak).toLocaleDateString('id-ID', {day:'2-digit', month:'long', year:'numeric'}) : '-'}</td><td className="px-4 py-3 print-hide"><div className="flex gap-1"><button className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" onClick={() => { setKendaraanData(k); setModalType('kendaraan'); }}><Edit3 size={14}/></button><button className="p-1.5 text-red-500 hover:bg-red-50 rounded" onClick={() => { if(window.confirm('Hapus kendaraan ini?')) deleteFromDb('kendaraan', k.id); }}><Trash2 size={14}/></button></div></td></tr>))}</tbody></table></div>
                 </div>
               )}
 
               {view === 'persediaan' && (
                 <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                   <div className="p-6 border-b flex justify-between print-hide"><h3 className="font-bold text-lg">Kartu Persediaan</h3><div className="flex gap-2"><Button variant="secondary" onClick={() => { setStokData({idBarang:'', jenisTransaksi:'Penambahan', jumlah:1}); setModalType('stok'); }}>Update Stok</Button><Button onClick={() => { setPersediaanData(initialPersediaanState); setModalType('persediaan_form'); }}>Tambah Barang</Button></div></div>
-                  <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="bg-gray-50 text-gray-500 uppercase font-bold border-b"><tr><th className="px-4 py-4 text-center border-r">Kode</th><th className="px-4 py-4">Barang</th><th className="px-4 py-4 text-center">Saldo Awal</th><th className="px-4 py-4 text-center text-green-600">Tambah</th><th className="px-4 py-4 text-center text-red-600">Keluar</th><th className="px-4 py-4 text-center">Saldo Akhir</th><th className="px-4 py-4 print-hide">Aksi</th></tr></thead><tbody className="divide-y divide-gray-100">{persediaan.map(p => { const saldo = p.saldoAwal + p.penambahan - p.pengeluaran; return (<tr key={p.id} className="hover:bg-gray-50"><td className="px-4 py-4 text-center font-mono text-xs border-r">{p.kode}</td><td className="px-4 py-4"><p className="font-bold">{p.nama}</p><p className="text-xs text-gray-500">{p.satuan}</p></td><td className="px-4 py-4 text-center">{p.saldoAwal}</td><td className="px-4 py-4 text-center font-bold text-green-600">{p.penambahan}</td><td className="px-4 py-4 text-center font-bold text-red-600">{p.pengeluaran}</td><td className="px-4 py-4 text-center font-bold bg-gray-50">{saldo}</td><td className="px-4 py-4 print-hide"><div className="flex justify-center gap-2"><button className="text-blue-600 p-1" onClick={() => { setPersediaanData(p); setModalType('persediaan_form'); }}><Edit3 size={16}/></button><button className="text-red-500 p-1" onClick={() => askConfirm("Hapus persediaan ini?", () => deleteFromDb('persediaan', p.id))}><Trash2 size={16}/></button></div></td></tr>)})}</tbody></table></div>
+                  <div className="overflow-x-auto"><table className="w-full text-left text-xs whitespace-nowrap"><thead className="bg-gray-50 text-gray-500 uppercase font-bold border-b text-[10px]"><tr><th className="px-3 py-2 text-center border-r">Kode</th><th className="px-3 py-2">Barang</th><th className="px-3 py-2 text-center">Saldo Awal</th><th className="px-3 py-2 text-center text-green-600">Tambah</th><th className="px-3 py-2 text-center text-red-600">Keluar</th><th className="px-3 py-2 text-center">Saldo Akhir</th><th className="px-3 py-2 print-hide">Aksi</th></tr></thead><tbody className="divide-y divide-gray-100">{persediaan.map(p => { const saldo = p.saldoAwal + p.penambahan - p.pengeluaran; return (<tr key={p.id} className="hover:bg-gray-50"><td className="px-3 py-2 text-center font-mono text-[10px] border-r">{p.kode}</td><td className="px-3 py-2"><p className="font-bold text-gray-800">{p.nama}</p><p className="text-[10px] text-gray-500">{p.satuan}</p></td><td className="px-3 py-2 text-center">{p.saldoAwal}</td><td className="px-3 py-2 text-center font-bold text-green-600">{p.penambahan}</td><td className="px-3 py-2 text-center font-bold text-red-600">{p.pengeluaran}</td><td className="px-3 py-2 text-center font-bold bg-gray-50">{saldo}</td><td className="px-3 py-2 print-hide"><div className="flex justify-center gap-1"><button className="text-blue-600 p-1.5 hover:bg-blue-50 rounded" onClick={() => { setPersediaanData(p); setModalType('persediaan_form'); }}><Edit3 size={14}/></button><button className="text-red-500 p-1.5 hover:bg-red-50 rounded" onClick={() => { if(window.confirm('Hapus persediaan ini?')) deleteFromDb('persediaan', p.id); }}><Trash2 size={14}/></button></div></td></tr>)})}</tbody></table></div>
                 </div>
               )}
 
@@ -929,7 +923,8 @@
                         options={[
                           {value: 'PAKTA', label: 'Pakta Integritas'},
                           {value: 'LAMPIRAN_PAKTA', label: 'Lampiran Pakta Integritas'},
-                          {value: 'BAST', label: 'Berita Acara Serah Terima Kendaraan'},
+                          {value: 'BAST_KENDARAAN', label: 'BAST Kendaraan Dinas'},
+                          {value: 'BAST_BMD', label: 'BAST Barang Milik Daerah'},
                           {value: 'PERMOHONAN', label: 'BA Permohonan Barang'},
                           {value: 'PENGEMBALIAN', label: 'BA Pengembalian Barang'}
                         ]}
@@ -938,7 +933,7 @@
                       <Input label="Tanggal Surat" type="date" value={adminForm.tanggal} onChange={(v) => setAdminForm({...adminForm, tanggal: v})} />
                       <Input label="Nomor Surat (Opsional)" value={adminForm.nomorSurat} onChange={(v) => setAdminForm({...adminForm, nomorSurat: v})} />
                       
-                      {adminForm.jenisSurat !== 'PAKTA' && adminForm.jenisSurat !== 'LAMPIRAN_PAKTA' && adminForm.jenisSurat !== 'BAST' && (
+                      {adminForm.jenisSurat !== 'PAKTA' && adminForm.jenisSurat !== 'LAMPIRAN_PAKTA' && adminForm.jenisSurat !== 'BAST_KENDARAAN' && adminForm.jenisSurat !== 'BAST_BMD' && (
                         <div className="mb-4">
                            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Referensi / Dasar Surat (Opsional)</label>
                            <textarea rows="3" placeholder="Contoh: Berdasarkan Surat Edaran Nomor..." value={adminForm.referensiSurat} onChange={(e) => setAdminForm({...adminForm, referensiSurat: e.target.value})} className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all placeholder:text-gray-400"></textarea>
@@ -947,34 +942,25 @@
 
                       <div className="mt-6 space-y-4">
                         <Select 
-                          label={adminForm.jenisSurat === 'BAST' ? 'Pihak Pertama (Yang Menyerahkan)' : adminForm.jenisSurat === 'PENGEMBALIAN' ? 'Pihak Pertama (Yang Mengembalikan)' : (adminForm.jenisSurat === 'PAKTA' || adminForm.jenisSurat === 'LAMPIRAN_PAKTA') ? 'Data Pegawai / ASN' : 'Pihak Pemohon'} 
+                          label={(adminForm.jenisSurat === 'BAST_KENDARAAN' || adminForm.jenisSurat === 'BAST_BMD') ? 'Pihak Pertama (Yang Menyerahkan)' : adminForm.jenisSurat === 'PENGEMBALIAN' ? 'Pihak Pertama (Yang Mengembalikan)' : (adminForm.jenisSurat === 'PAKTA' || adminForm.jenisSurat === 'LAMPIRAN_PAKTA') ? 'Data Pegawai / ASN' : 'Pihak Pemohon'} 
                           value={adminForm.pihak1Id} 
                           onChange={(v) => setAdminForm({...adminForm, pihak1Id: v})} 
                           options={[{value: '', label: '-- Pilih Pegawai --'}, ...pegawai.map(p => ({value: p.id, label: p.nama}))]} 
                         />
 
-                        {(adminForm.jenisSurat === 'PAKTA' || adminForm.jenisSurat === 'LAMPIRAN_PAKTA') && (
+                        {(adminForm.jenisSurat === 'PAKTA' || adminForm.jenisSurat === 'LAMPIRAN_PAKTA' || adminForm.jenisSurat === 'BAST_KENDARAAN' || adminForm.jenisSurat === 'BAST_BMD') && (
                           <div className="p-4 bg-blue-50 rounded-lg border border-blue-100 text-sm">
-                            <p className="text-blue-800 font-semibold mb-2 flex items-center gap-2"><Info size={16}/> Informasi Otomatis</p>
-                            <p className="text-gray-600">Sistem mendeteksi kendaraan & barang yang dipegang Pegawai untuk mengisi teks dan tabel. (Termasuk otomatis mengisi Kode Barang & NIBAR di Lampiran).</p>
+                            <p className="text-blue-800 font-semibold mb-2 flex items-center gap-2"><Info size={16}/> Integrasi Otomatis</p>
+                            <p className="text-gray-600">Sistem mendeteksi kendaraan & barang yang sedang dipegang oleh Pegawai terpilih untuk mengisi teks surat dan tabel rincian secara otomatis.</p>
                           </div>
                         )}
                         
-                        {(adminForm.jenisSurat === 'BAST' || adminForm.jenisSurat === 'PENGEMBALIAN') && (
+                        {(adminForm.jenisSurat === 'BAST_KENDARAAN' || adminForm.jenisSurat === 'BAST_BMD' || adminForm.jenisSurat === 'PENGEMBALIAN') && (
                           <Select 
                             label="Pihak Kedua (Yang Menerima)" 
                             value={adminForm.pihak2Id} 
                             onChange={(v) => setAdminForm({...adminForm, pihak2Id: v})} 
                             options={[{value: '', label: '-- Pilih Pegawai --'}, ...pegawai.map(p => ({value: p.id, label: p.nama}))]} 
-                          />
-                        )}
-                        
-                        {(adminForm.jenisSurat === 'BAST') && (
-                          <Select 
-                            label="Kendaraan Terkait (Opsional)" 
-                            value={adminForm.kendaraanId} 
-                            onChange={(v) => setAdminForm({...adminForm, kendaraanId: v})} 
-                            options={[{value: '', label: '-- Tidak Ada / Kosong --'}, ...kendaraan.map(k => ({value: k.id, label: `${k.namaKendaraan} (${k.noKendaraan})`}))]} 
                           />
                         )}
 
@@ -1003,8 +989,6 @@
                                 onChange={(v) => setAdminForm({...adminForm, penggunaBarangId: v})} 
                                 options={[{value: '', label: '-- Pilih Pegawai --'}, ...pegawai.map(p => ({value: p.id, label: p.nama}))]} 
                              />
-                             
-                             <Input label="Alamat / Ruangan Pemakai" placeholder="Cth: Jl. Merdeka No. 1" value={adminForm.alamat} onChange={(v) => setAdminForm({...adminForm, alamat: v})} />
                              
                              <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
                                <p className="text-xs font-bold text-gray-600 mb-2">BAST Pemakaian (Dok. Sumber)</p>
@@ -1184,12 +1168,12 @@
                                        <td style={{ padding: '4px' }}>{item.isKendaraan ? '-' : (item.kodeBarang || '-')}</td>
                                        <td style={{ padding: '4px', textAlign: 'left' }}>{item.isKendaraan ? item.namaKendaraan : item.nama}</td>
                                        <td style={{ padding: '4px', textAlign: 'left' }}>{item.isKendaraan ? item.jenis : item.merk}</td>
-                                       <td style={{ padding: '4px' }}>{item.isKendaraan ? (adminForm.alamat || '-') : (item.lokasi || adminForm.alamat || '-')}</td>
+                                       <td style={{ padding: '4px' }}>{item.isKendaraan ? (selectedPihak1.alamat || '-') : (item.lokasi || selectedPihak1.alamat || '-')}</td>
                                        <td style={{ padding: '4px' }}>{selectedPihak1.nama}</td>
                                        <td style={{ padding: '4px' }}>{selectedPihak1.status}</td>
                                        <td style={{ padding: '4px' }}>{selectedPihak1.jabatan}</td>
-                                       <td style={{ padding: '4px' }}>{selectedPihak1.nip}</td>
-                                       <td style={{ padding: '4px' }}>{adminForm.alamat || '-'}</td>
+                                       <td style={{ padding: '4px' }}>{selectedPihak1.ktp || '-'}</td>
+                                       <td style={{ padding: '4px' }}>{selectedPihak1.alamat || '-'}</td>
                                        <td style={{ padding: '4px' }}>{adminForm.bastNomor || '-'}</td>
                                        <td style={{ padding: '4px' }}>{adminForm.bastTanggal ? new Date(adminForm.bastTanggal).toLocaleDateString('id-ID') : '-'}</td>
                                        <td style={{ padding: '4px' }}>
@@ -1219,64 +1203,66 @@
                             </table>
                           </div>
 
-                      ) : adminForm.jenisSurat === 'BAST' ? (
+                      ) : adminForm.jenisSurat === 'BAST_KENDARAAN' ? (
 
-                        /* --- Template Khusus BAST (Berita Acara Serah Terima KENDARAAN DINAS) --- */
+                        /* --- Template BAST Kendaraan Dinas (Terintegrasi & Sesuai File Upload) --- */
                         <>
                           <div style={{ textAlign: 'center', marginBottom: '30px' }}>
-                            <strong style={{ fontSize: '14pt', textTransform: 'uppercase', textDecoration: 'underline' }}>Berita Acara Serah Kendaraan Dinas</strong>
+                            <strong style={{ fontSize: '13pt', textTransform: 'uppercase', textDecoration: 'underline', display: 'block' }}>BERITA ACARA SERAH TERIMA KENDARAAN DINAS</strong>
+                            <span style={{ fontSize: '11pt', display: 'block', marginTop: '2px' }}>Nomor: {adminForm.nomorSurat || '........................'}</span>
                           </div>
                           
-                          <div style={{ textAlign: 'justify' }}>
+                          <div style={{ textAlign: 'justify', fontSize: '11pt' }}>
+                            <p style={{ marginBottom: '15px' }}>Pada hari ini, <strong>{formatHariIndo(adminForm.tanggal)}</strong> Tanggal <strong>{getTanggalSaja(adminForm.tanggal)}</strong> Bulan <strong>{getBulanSaja(adminForm.tanggal)}</strong> Tahun <strong>{formatTahunIndo(adminForm.tanggal)}</strong> sudah diserahkan Kendaraan Dinas Operasional Roda {heldKendaraan[0]?.jenis?.includes('Roda 2') ? '2' : '4'} milik Pemerintah Kota Bandung sebagaimana terlampir di bawah ini yang menyerahkan dan penerimaannya dapat dipertanggung jawabkan oleh:</p>
 
-                            <p style={{ marginBottom: '15px' }}>Pada hari ini, <strong>{formatHariIndo(adminForm.tanggal)}</strong> tanggal <strong>{getTanggalSaja(adminForm.tanggal)}</strong> Bulan <strong>{getBulanSaja(adminForm.tanggal)}</strong> Tahun <strong>{formatTahunIndo(adminForm.tanggal)}</strong> sudah diserahkan {adminForm.kendaraanId ? <strong>{getKendaraanObj(adminForm.kendaraanId).namaKendaraan}</strong> : '.......................'} milik Pemerintah Kota Bandung sebagaimana terlampir di bawah ini yang menyerahkan dan penerimaannya dapat dipertanggung jawabkan oleh:</p>
-
-                            <table style={{ width: '100%', marginBottom: '15px', marginLeft: '20px' }}>
+                            <table style={{ width: '100%', marginBottom: '10px', marginLeft: '20px' }}>
                               <tbody>
-                                <tr><td style={{ width: '30px', verticalAlign: 'top' }}>1.</td><td colSpan="3" style={{ paddingBottom: '5px' }}>Yang Menyerahkan</td></tr>
-                                <tr><td></td><td style={{ width: '100px', verticalAlign: 'top' }}>Nama</td><td style={{ width: '15px', textAlign: 'center', verticalAlign: 'top' }}>:</td><td><strong>{getPegawaiObj(adminForm.pihak1Id).nama}</strong></td></tr>
-                                <tr><td></td><td>NIP</td><td style={{ textAlign: 'center' }}>:</td><td>{getPegawaiObj(adminForm.pihak1Id).nip}</td></tr>
-                                <tr><td></td><td style={{ verticalAlign: 'top' }}>Jabatan</td><td style={{ textAlign: 'center', verticalAlign: 'top' }}>:</td><td>{getPegawaiObj(adminForm.pihak1Id).jabatan}</td></tr>
+                                <tr><td style={{ width: '30px', verticalAlign: 'top' }}>1.</td><td colSpan="3" style={{ paddingBottom: '3px', fontWeight: 'bold' }}>Yang Menyerahkan</td></tr>
+                                <tr><td></td><td style={{ width: '100px' }}>Nama</td><td style={{ width: '15px', textAlign: 'center' }}>:</td><td><strong>{selectedPihak1.nama}</strong></td></tr>
+                                <tr><td></td><td>NIP</td><td style={{ textAlign: 'center' }}>:</td><td>{selectedPihak1.nip}</td></tr>
+                                <tr><td></td><td style={{ verticalAlign: 'top' }}>Jabatan</td><td style={{ textAlign: 'center', verticalAlign: 'top' }}>:</td><td>Pengurus Barang Pembantu pada Bagian Protokol dan Komunikasi Pimpinan, Sekretariat Daerah Kota Bandung</td></tr>
                                 
-                                <tr><td colSpan="4" style={{ height: '15px' }}></td></tr>
+                                <tr><td colSpan="4" style={{ height: '10px' }}></td></tr>
 
-                                <tr><td style={{ width: '30px', verticalAlign: 'top' }}>2.</td><td colSpan="3" style={{ paddingBottom: '5px' }}>Yang Menerima</td></tr>
-                                <tr><td></td><td style={{ width: '100px', verticalAlign: 'top' }}>Nama</td><td style={{ width: '15px', textAlign: 'center', verticalAlign: 'top' }}>:</td><td><strong>{getPegawaiObj(adminForm.pihak2Id).nama}</strong></td></tr>
-                                <tr><td></td><td>NIP</td><td style={{ textAlign: 'center' }}>:</td><td>{getPegawaiObj(adminForm.pihak2Id).nip}</td></tr>
-                                <tr><td></td><td style={{ verticalAlign: 'top' }}>Jabatan</td><td style={{ textAlign: 'center', verticalAlign: 'top' }}>:</td><td>{getPegawaiObj(adminForm.pihak2Id).jabatan}</td></tr>
+                                <tr><td style={{ width: '30px', verticalAlign: 'top' }}>2.</td><td colSpan="3" style={{ paddingBottom: '3px', fontWeight: 'bold' }}>Yang Menerima</td></tr>
+                                <tr><td></td><td style={{ width: '100px' }}>Nama</td><td style={{ width: '15px', textAlign: 'center' }}>:</td><td><strong>{selectedPihak2.nama}</strong></td></tr>
+                                <tr><td></td><td>NIP</td><td style={{ textAlign: 'center' }}>:</td><td>{selectedPihak2.nip}</td></tr>
+                                <tr><td></td><td style={{ verticalAlign: 'top' }}>Jabatan</td><td style={{ textAlign: 'center', verticalAlign: 'top' }}>:</td><td>{selectedPihak2.jabatan || '..................'} pada Bagian Protokol dan Komunikasi Pimpinan, Sekretariat Daerah Kota Bandung</td></tr>
                               </tbody>
                             </table>
 
                             <div style={{ marginBottom: '20px' }}>
                               <p style={{ marginBottom: '15px' }}>Barang-barang diterima dalam keadaan utuh dan baik banyaknya tercatat sebagai berikut:</p>
                               
-                              <table border="1" style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '15px', borderColor: 'black' }}>
+                              <table border="1" style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '15px', borderColor: 'black', fontSize: '10pt' }}>
                                 <thead>
-                                  <tr>
-                                    <th style={{ padding: '8px', textAlign: 'center', width: '40px' }}>No</th>
-                                    <th style={{ padding: '8px' }}>Merk/Type</th>
-                                    <th style={{ padding: '8px', textAlign: 'center' }}>No. Pol</th>
-                                    <th style={{ padding: '8px', textAlign: 'center' }}>No. Rangka</th>
-                                    <th style={{ padding: '8px', textAlign: 'center' }}>No. Mesin</th>
-                                    <th style={{ padding: '8px', textAlign: 'center' }}>Tahun</th>
-                                    <th style={{ padding: '8px', textAlign: 'center' }}>Ket</th>
+                                  <tr style={{ backgroundColor: '#f2f2f2' }}>
+                                    <th style={{ padding: '6px', textAlign: 'center', width: '40px' }}>No</th>
+                                    <th style={{ padding: '6px', textAlign: 'left' }}>Merk/Type</th>
+                                    <th style={{ padding: '6px', textAlign: 'center' }}>No. Pol</th>
+                                    <th style={{ padding: '6px', textAlign: 'center' }}>No. Rangka</th>
+                                    <th style={{ padding: '6px', textAlign: 'center' }}>No. Mesin</th>
+                                    <th style={{ padding: '6px', textAlign: 'center' }}>Tahun</th>
+                                    <th style={{ padding: '6px', textAlign: 'center' }}>Ket</th>
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {adminForm.kendaraanId ? (
-                                    <tr>
-                                      <td style={{ padding: '8px', textAlign: 'center' }}>1</td>
-                                      <td style={{ padding: '8px' }}><strong>{getKendaraanObj(adminForm.kendaraanId).namaKendaraan}</strong></td>
-                                      <td style={{ padding: '8px', textAlign: 'center' }}>{getKendaraanObj(adminForm.kendaraanId).noKendaraan}</td>
-                                      <td style={{ padding: '8px', textAlign: 'center' }}>{getKendaraanObj(adminForm.kendaraanId).noRangka || '-'}</td>
-                                      <td style={{ padding: '8px', textAlign: 'center' }}>{getKendaraanObj(adminForm.kendaraanId).noMesin || '-'}</td>
-                                      <td style={{ padding: '8px', textAlign: 'center' }}>{getKendaraanObj(adminForm.kendaraanId).tahun || '-'}</td>
-                                      <td style={{ padding: '8px', textAlign: 'center' }}>{getKendaraanObj(adminForm.kendaraanId).kondisi}</td>
-                                    </tr>
+                                  {heldKendaraan.length > 0 ? (
+                                    heldKendaraan.map((k, idx) => (
+                                      <tr key={idx}>
+                                        <td style={{ padding: '6px', textAlign: 'center' }}>{idx + 1}</td>
+                                        <td style={{ padding: '6px', textAlign: 'left' }}><strong>{k.namaKendaraan}</strong></td>
+                                        <td style={{ padding: '6px', textAlign: 'center' }}>{k.noKendaraan}</td>
+                                        <td style={{ padding: '6px', textAlign: 'center' }}>{k.noRangka || '-'}</td>
+                                        <td style={{ padding: '6px', textAlign: 'center' }}>{k.noMesin || '-'}</td>
+                                        <td style={{ padding: '6px', textAlign: 'center' }}>{k.tahun || '-'}</td>
+                                        <td style={{ padding: '6px', textAlign: 'center' }}>{k.kondisi}</td>
+                                      </tr>
+                                    ))
                                   ) : (
                                     <tr>
-                                      <td style={{ padding: '8px', textAlign: 'center' }}>1</td>
-                                      <td style={{ padding: '8px', fontWeight: 'bold' }}>..........................</td>
+                                      <td style={{ padding: '6px', textAlign: 'center' }}>1</td>
+                                      <td style={{ padding: '6px', fontWeight: 'bold' }}>..........................</td>
                                       <td style={{ padding: '8px', textAlign: 'center' }}>..........................</td>
                                       <td style={{ padding: '8px', textAlign: 'center' }}>..........................</td>
                                       <td style={{ padding: '8px', textAlign: 'center' }}>..........................</td>
@@ -1288,18 +1274,105 @@
                               </table>
                             </div>
 
-                            <table style={{ width: '100%', textAlign: 'center', marginTop: '60px' }}>
+                            <table style={{ width: '100%', textAlign: 'center', marginTop: '40px' }}>
                               <tbody>
                                 <tr>
                                   <td style={{ width: '50%' }}>
-                                    <p style={{ marginBottom: '80px', marginTop: '0' }}>Yang Menerima,</p>
-                                    <strong style={{ textDecoration: 'underline' }}>{getPegawaiObj(adminForm.pihak2Id).nama}</strong>
-                                    <p style={{ marginTop: '5px' }}>NIP. {getPegawaiObj(adminForm.pihak2Id).nip}</p>
+                                    <p style={{ marginBottom: '60px', marginTop: '0' }}>Yang Menerima,</p>
+                                    <strong style={{ textDecoration: 'underline' }}>{selectedPihak2.nama}</strong>
+                                    <p style={{ marginTop: '2px' }}>NIP. {selectedPihak2.nip}</p>
                                   </td>
                                   <td style={{ width: '50%' }}>
-                                    <p style={{ marginBottom: '80px', marginTop: '0' }}>Yang Menyerahkan,</p>
-                                    <strong style={{ textDecoration: 'underline' }}>{getPegawaiObj(adminForm.pihak1Id).nama}</strong>
-                                    <p style={{ marginTop: '5px' }}>NIP. {getPegawaiObj(adminForm.pihak1Id).nip}</p>
+                                    <p style={{ marginBottom: '60px', marginTop: '0' }}>Yang Menyerahkan,</p>
+                                    <strong style={{ textDecoration: 'underline' }}>{selectedPihak1.nama}</strong>
+                                    <p style={{ marginTop: '2px' }}>NIP. {selectedPihak1.nip}</p>
+                                  </td>
+                                </tr>
+                              </tbody>
+                            </table>
+                          </div>
+                        </>
+
+                      ) : adminForm.jenisSurat === 'BAST_BMD' ? (
+
+                        /* --- Template BAST Barang Milik Daerah (Auto-fill & Sesuai File Upload) --- */
+                        <>
+                          <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+                            <strong style={{ fontSize: '13pt', textTransform: 'uppercase', textDecoration: 'underline', display: 'block' }}>BERITA ACARA SERAH TERIMA BARANG MILIK DAERAH</strong>
+                            <span style={{ fontSize: '11pt', display: 'block', marginTop: '2px' }}>Nomor: {adminForm.nomorSurat || '........................'}</span>
+                          </div>
+                          
+                          <div style={{ textAlign: 'justify', fontSize: '11pt' }}>
+                            <p style={{ marginBottom: '15px' }}>Pada hari ini, <strong>{formatHariIndo(adminForm.tanggal)}</strong> tanggal <strong>{getTanggalSaja(adminForm.tanggal)}</strong> bulan <strong>{getBulanSaja(adminForm.tanggal)}</strong> tahun <strong>{formatTahunIndo(adminForm.tanggal)}</strong> sudah diserahkan barang sebagaimana terlampir di bawah ini dari Kuasa Pengguna Barang pada Bagian Protokol dan Komunikasi Pimpinan, Sekretariat Daerah Kota Bandung, yang menyerahkan dan penerimanya dapat dipertanggung jawabkan oleh:</p>
+
+                            <table style={{ width: '100%', marginBottom: '10px', marginLeft: '20px' }}>
+                              <tbody>
+                                <tr><td style={{ width: '30px', verticalAlign: 'top' }}>1.</td><td colSpan="3" style={{ paddingBottom: '3px', fontWeight: 'bold' }}>Yang Menyerahkan</td></tr>
+                                <tr><td></td><td style={{ width: '100px' }}>Nama</td><td style={{ width: '15px', textAlign: 'center' }}>:</td><td><strong>{selectedPihak1.nama}</strong></td></tr>
+                                <tr><td></td><td>NIP</td><td style={{ textAlign: 'center' }}>:</td><td>{selectedPihak1.nip}</td></tr>
+                                <tr><td></td><td style={{ verticalAlign: 'top' }}>Jabatan</td><td style={{ textAlign: 'center', verticalAlign: 'top' }}>:</td><td>Pengurus Barang Pembantu pada Bagian Protokol dan Komunikasi Pimpinan, Sekretariat Daerah Kota Bandung</td></tr>
+                                
+                                <tr><td colSpan="4" style={{ height: '10px' }}></td></tr>
+
+                                <tr><td style={{ width: '30px', verticalAlign: 'top' }}>2.</td><td colSpan="3" style={{ paddingBottom: '3px', fontWeight: 'bold' }}>Yang Menerima</td></tr>
+                                <tr><td></td><td style={{ width: '100px' }}>Nama</td><td style={{ width: '15px', textAlign: 'center' }}>:</td><td><strong>{selectedPihak2.nama}</strong></td></tr>
+                                <tr><td></td><td>NIP</td><td style={{ textAlign: 'center' }}>:</td><td>{selectedPihak2.nip}</td></tr>
+                                <tr><td></td><td style={{ verticalAlign: 'top' }}>Jabatan</td><td style={{ textAlign: 'center', verticalAlign: 'top' }}>:</td><td>{selectedPihak2.jabatan || '..................'} pada Bagian Protokol dan Komunikasi Pimpinan, Sekretariat Daerah Kota Bandung</td></tr>
+                              </tbody>
+                            </table>
+
+                            <div style={{ marginBottom: '20px' }}>
+                              <p style={{ marginBottom: '15px' }}>Barang yang diterima dalam keadaan utuh dan baik yang banyaknya tercatat sebagai berikut:</p>
+                              
+                              <table border="1" style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '15px', borderColor: 'black', fontSize: '10pt' }}>
+                                <thead>
+                                  <tr style={{ backgroundColor: '#f2f2f2' }}>
+                                    <th style={{ padding: '6px', textAlign: 'center', width: '40px' }}>No</th>
+                                    <th style={{ padding: '6px', textAlign: 'center', width: '90px' }}>Banyaknya</th>
+                                    <th style={{ padding: '6px', textAlign: 'center', width: '90px' }}>Satuan</th>
+                                    <th style={{ padding: '6px', textAlign: 'left' }}>Nama Barang</th>
+                                    <th style={{ padding: '6px', textAlign: 'center' }}>Nomor Seri</th>
+                                    <th style={{ padding: '6px', textAlign: 'center' }}>Kondisi</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {heldBarang.length > 0 ? (
+                                    heldBarang.map((b, idx) => (
+                                      <tr key={idx}>
+                                        <td style={{ padding: '6px', textAlign: 'center' }}>{idx + 1}</td>
+                                        <td style={{ padding: '6px', textAlign: 'center' }}>1</td>
+                                        <td style={{ padding: '6px', textAlign: 'center' }}>Unit</td>
+                                        <td style={{ padding: '6px', textAlign: 'left' }}><strong>{b.nama}</strong> <span style={{ fontSize: '8pt', color: '#666' }}>({b.merk || '-'})</span></td>
+                                        <td style={{ padding: '6px', textAlign: 'center' }}>{b.nomorSeri || '-'}</td>
+                                        <td style={{ padding: '6px', textAlign: 'center' }}>{b.kondisi}</td>
+                                      </tr>
+                                    ))
+                                  ) : (
+                                    <tr>
+                                      <td style={{ padding: '6px', textAlign: 'center' }}>1</td>
+                                      <td style={{ padding: '6px', textAlign: 'center' }}>-</td>
+                                      <td style={{ padding: '6px', textAlign: 'center' }}>-</td>
+                                      <td style={{ padding: '6px', fontWeight: 'bold' }}>..........................</td>
+                                      <td style={{ padding: '6px', textAlign: 'center' }}>..........................</td>
+                                      <td style={{ padding: '6px', textAlign: 'center' }}>..........................</td>
+                                    </tr>
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
+
+                            <table style={{ width: '100%', textAlign: 'center', marginTop: '40px' }}>
+                              <tbody>
+                                <tr>
+                                  <td style={{ width: '50%' }}>
+                                    <p style={{ marginBottom: '60px', marginTop: '0' }}>Yang Menerima,</p>
+                                    <strong style={{ textDecoration: 'underline' }}>{selectedPihak2.nama}</strong>
+                                    <p style={{ marginTop: '2px' }}>NIP. {selectedPihak2.nip}</p>
+                                  </td>
+                                  <td style={{ width: '50%' }}>
+                                    <p style={{ marginBottom: '60px', marginTop: '0' }}>Yang Menyerahkan,</p>
+                                    <strong style={{ textDecoration: 'underline' }}>{selectedPihak1.nama}</strong>
+                                    <p style={{ marginTop: '2px' }}>NIP. {selectedPihak1.nip}</p>
                                   </td>
                                 </tr>
                               </tbody>
