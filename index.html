@@ -200,11 +200,9 @@
       const [loginData, setLoginData] = useState({ identifier: '', password: '' });
       const [signupData, setSignupData] = useState({ nama: '', nip: '', jabatan: '', email: '', password: '' });
       
-      // Update state dengan KTP & Alamat
       const initialPegawaiState = { nama: '', jabatan: '', nip: '', status: 'PNS', penempatan: 'Bagian Prokopim', ktp: '', alamat: '' };
       const [newPegawai, setNewPegawai] = useState(initialPegawaiState);
       
-      // Update state dengan Kode Barang & NIBAR
       const initialBarangState = { 
         tahun: new Date().getFullYear().toString(), 
         kodeBarang: '',
@@ -244,14 +242,14 @@
         jenisSurat: 'PAKTA', // Default
         tanggal: new Date().toISOString().split('T')[0],
         customLogo: '',
-        pihak1Id: '', // Pihak Pertama (Biasanya Yang Menyerahkan/Pengurus Barang)
-        pihak2Id: '', // Pihak Kedua (Yang Menerima)
+        pihak1Id: '', // Pihak Pertama
+        pihak2Id: '', // Pihak Kedua
         barangId: '', 
         kendaraanId: '',
         nomorSurat: '027/     /Prokopim/2026',
         referensiSurat: '',
-        kuasaPenggunaBarangId: '', // Terintegrasi dgn Pegawai
-        penggunaBarangId: '', // Terintegrasi dgn Pegawai
+        kuasaPenggunaBarangId: '', 
+        penggunaBarangId: '', 
         alamat: '',
         bastNomor: '',
         bastTanggal: '',
@@ -290,12 +288,10 @@
       const getBarangObj = (id) => barang.find(b => b.id === id) || { nama: '..........................', merk: '..........................', nomorSeri: '..........................', kondisi: '..........................' };
       const getKendaraanObj = (id) => kendaraan.find(k => k.id === id) || { namaKendaraan: '..........................', noKendaraan: '..........................', noRangka: '..........................', noMesin: '..........................', tahun: '..........................', jenis: 'Roda 4' };
 
-      // Helper Khusus Pakta Integritas & BAST (Auto-fill Aset berdasarkan Pegawai Pihak 2/Pihak 1)
+      // Helper Khusus Pakta Integritas & BAST (Auto-fill Aset)
       const selectedPihak1 = getPegawaiObj(adminForm.pihak1Id);
       const selectedPihak2 = getPegawaiObj(adminForm.pihak2Id);
       
-      // Auto-detect berdasarkan Pihak 2 (Yang Menerima / Pemakai) untuk BAST, tapi untuk Pakta biasanya Pihak 1 yang digunakan.
-      // Kita gabungkan logikanya, jika surat lampiran pakta gunakan pihak 1, jika BAST gunakan pihak 2.
       const targetPihak = adminForm.jenisSurat === 'LAMPIRAN_PAKTA' || adminForm.jenisSurat === 'PAKTA' ? selectedPihak1 : selectedPihak2;
 
       const heldKendaraan = kendaraan.filter(k => k.pemegang === targetPihak.nama || k.nip === targetPihak.nip);
@@ -588,6 +584,13 @@
       const pProkopim = pegawai.filter(p => p.penempatan === 'Bagian Prokopim').length; const pProtokol = pegawai.filter(p => p.penempatan === 'Sub Bagian Protokol').length; const pKomunikasi = pegawai.filter(p => p.penempatan === 'Sub Bagian Komunikasi Pimpinan').length; const pDokumentasi = pegawai.filter(p => p.penempatan === 'Sub Bagian Dokumentasi Pimpinan').length;
       const kRoda2 = kendaraan.filter(k => k.jenis && k.jenis.includes('Roda 2')).length; const kRoda4 = kendaraan.filter(k => k.jenis && k.jenis.includes('Roda 4')).length;
 
+      const barangBaik = barang.filter(b => b.kondisi === 'Baik').length;
+      const barangRusakRingan = barang.filter(b => b.kondisi === 'Rusak Ringan').length;
+      const barangRusakBerat = barang.filter(b => b.kondisi === 'Rusak Berat').length;
+      const barangAktif = barang.filter(b => b.status === 'Aktif').length;
+      const barangDipinjamkan = barang.filter(b => b.status === 'Dipinjamkan').length;
+      const barangTidakDiketahui = barang.filter(b => b.status === 'Tidak Diketahui').length;
+
       // --- Setup Print Variables ---
       const isLandscapeView = adminForm.jenisSurat === 'LAMPIRAN_PAKTA';
 
@@ -650,6 +653,15 @@
             `}</style>
           )}
 
+          {confirmDialog.isOpen && (
+            <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm print-hide">
+              <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm text-center animate-in zoom-in duration-200">
+                <AlertCircle className="mx-auto text-red-500 mb-4" size={48} /><h3 className="text-lg font-bold text-gray-800 mb-2">Konfirmasi Tindakan</h3><p className="text-gray-600 mb-6">{confirmDialog.message}</p>
+                <div className="flex justify-center gap-3"><Button variant="secondary" onClick={() => setConfirmDialog({isOpen: false, message: '', onConfirm: null})}>Batal</Button><Button variant="danger" onClick={() => { if(confirmDialog.onConfirm) confirmDialog.onConfirm(); setConfirmDialog({isOpen: false, message: '', onConfirm: null}); }}>Ya, Hapus</Button></div>
+              </div>
+            </div>
+          )}
+
           {/* Modals Data Dasar */}
           <Modal isOpen={modalType === 'pegawai'} onClose={() => setModalType(null)} title={newPegawai.id ? "Edit Pegawai" : "Tambah Pegawai Baru"}>
             <form onSubmit={handleSavePegawai}>
@@ -679,7 +691,7 @@
               <div className="grid grid-cols-2 gap-4"><Input label="Merk/Type" value={barangData.merk} onChange={(val) => setBarangData({...barangData, merk: val})} placeholder="Cth: Asus Vivobook" /><Input label="Nomor Seri (SN) - Opsional" value={barangData.nomorSeri} onChange={(val) => setBarangData({...barangData, nomorSeri: val})} placeholder="Cth: SN-12345" /></div>
               <div className="grid grid-cols-2 gap-4"><Input label="Tahun Perolehan" type="number" value={barangData.tahun} onChange={(val) => setBarangData({...barangData, tahun: val})} required /><Select label="Kondisi" value={barangData.kondisi} onChange={(val) => setBarangData({...barangData, kondisi: val})} options={['Baik', 'Rusak Ringan', 'Rusak Berat']} required /></div>
               <div className="grid grid-cols-2 gap-4">
-                <Select label="Status" value={barangData.status} onChange={(val) => setBarangData({...barangData, status: val, peminjamNama: '', peminjamNip: '', peminjamJabatan: '', lokasiSaatIni: ''})} options={['Baru', 'Aktif', 'Dipinjamkan', 'Maintenance', 'Dihapuskan']} required />
+                <Select label="Status" value={barangData.status} onChange={(val) => setBarangData({...barangData, status: val, peminjamNama: '', peminjamNip: '', peminjamJabatan: '', lokasiSaatIni: ''})} options={['Baru', 'Aktif', 'Dipinjamkan', 'Maintenance', 'Dihapuskan', 'Tidak Diketahui']} required />
                 <Select label="Lokasi Penyimpanan Barang" value={barangData.lokasi} onChange={(val) => setBarangData({...barangData, lokasi: val})} options={['Gudang', 'Ruang Dokumentasi Pimpinan', 'Ruang Komunikasi Pimpinan', 'Ruang Protokol', 'Ruang Kepala Bagian', 'Ruang Rapat', 'Ruang Resepsionis', 'Dapur', 'Kamar Mandi', 'Mushola', 'Ruang Tengah', 'Rumah']} required placeholder="Pilih Lokasi" />
               </div>
               
@@ -817,6 +829,20 @@
                     <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm col-span-1">
                       <h4 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4 border-b pb-3">Statistik Kendaraan</h4>
                       <div className="grid grid-cols-2 gap-4"><div className="bg-gray-50 rounded-lg p-4 text-center border border-gray-100"><p className="text-3xl font-bold text-gray-800">{kRoda2}</p><p className="text-xs font-semibold text-gray-500 mt-1">RODA 2</p></div><div className="bg-gray-50 rounded-lg p-4 text-center border border-gray-100"><p className="text-3xl font-bold text-gray-800">{kRoda4}</p><p className="text-xs font-semibold text-gray-500 mt-1">RODA 4</p></div></div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 gap-6">
+                    <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                      <h4 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4 border-b pb-3">Statistik Barang Aset</h4>
+                      <div className="grid grid-cols-2 md:grid-cols-7 gap-4">
+                         <div className="bg-blue-50 rounded-lg p-3 text-center border border-blue-100"><p className="text-xl font-bold text-blue-700">{barang.length}</p><p className="text-[9px] font-semibold text-blue-600 mt-1 uppercase">Total Barang</p></div>
+                         <div className="bg-green-50 rounded-lg p-3 text-center border border-green-100"><p className="text-xl font-bold text-green-700">{barangBaik}</p><p className="text-[9px] font-semibold text-green-600 mt-1 uppercase">Kondisi Baik</p></div>
+                         <div className="bg-orange-50 rounded-lg p-3 text-center border border-orange-100"><p className="text-xl font-bold text-orange-700">{barangRusakRingan}</p><p className="text-[9px] font-semibold text-orange-600 mt-1 uppercase">Rusak Ringan</p></div>
+                         <div className="bg-red-50 rounded-lg p-3 text-center border border-red-100"><p className="text-xl font-bold text-red-700">{barangRusakBerat}</p><p className="text-[9px] font-semibold text-red-600 mt-1 uppercase">Rusak Berat</p></div>
+                         <div className="bg-indigo-50 rounded-lg p-3 text-center border border-indigo-100"><p className="text-xl font-bold text-indigo-700">{barangAktif}</p><p className="text-[9px] font-semibold text-indigo-600 mt-1 uppercase">Status Aktif</p></div>
+                         <div className="bg-purple-50 rounded-lg p-3 text-center border border-purple-100"><p className="text-xl font-bold text-purple-700">{barangDipinjamkan}</p><p className="text-[9px] font-semibold text-purple-600 mt-1 uppercase">Dipinjamkan</p></div>
+                         <div className="bg-slate-50 rounded-lg p-3 text-center border border-slate-200"><p className="text-xl font-bold text-slate-700">{barangTidakDiketahui}</p><p className="text-[9px] font-semibold text-slate-600 mt-1 uppercase">Tidak Diketahui</p></div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1067,35 +1093,35 @@
                                   <td style={{ width: '25px', verticalAlign: 'top' }}>1.</td>
                                   <td style={{ verticalAlign: 'top', textAlign: 'justify' }}>
                                     Bahwa telah menerima dan menggunakan Barang Milik Daerah Untuk Menunjang Tugas Pokok dan Fungsi selaku ASN berupa:
-                                    <table style={{ width: '100%', marginTop: '5px', marginBottom: '10px' }}>
-                                      <tbody>
-                                        <tr>
-                                          <td style={{ width: '25px', verticalAlign: 'top' }}>1)</td>
-                                          <td style={{ verticalAlign: 'top' }}>
-                                            Data Kendaraan: {heldKendaraan.length > 0 ? (
-                                              <span>{heldKendaraan.map(k => ` ${k.namaKendaraan} (Nomor Polisi: ${k.noKendaraan}, Nomor Rangka: ${k.noRangka || '-'}, Nomor Mesin: ${k.noMesin || '-'})`).join(', ')}</span>
-                                            ) : '.........................................................................................'}
-                                          </td>
-                                        </tr>
-                                        <tr>
-                                          <td style={{ width: '25px', verticalAlign: 'top' }}>2)</td>
-                                          <td style={{ verticalAlign: 'top' }}>
-                                            Data BMD (Laptop dan Handphone) di luar Kendaraan: {heldBarang.length > 0 ? (
-                                              <span>{heldBarang.map(b => ` ${b.nama} (Nomor Seri: ${b.nomorSeri || '-'} dan Jenis: ${b.merk || '-'})`).join(', ')}</span>
-                                            ) : '.........................................................................................'}
-                                          </td>
-                                        </tr>
-                                      </tbody>
-                                    </table>
+                                    <div style={{ marginTop: '5px', marginBottom: '10px', paddingLeft: '5px' }}>
+                                      {allHeldItems.length > 0 ? (
+                                        <ol style={{ listStyleType: 'decimal', margin: 0, paddingLeft: '20px' }}>
+                                          {heldKendaraan.map((k, idx) => (
+                                            <li key={'k'+idx} style={{ paddingBottom: '4px' }}>
+                                              {k.namaKendaraan} (No. Polisi: {k.noKendaraan}, No. Rangka: {k.noRangka || '-'}, No. Mesin: {k.noMesin || '-'})
+                                            </li>
+                                          ))}
+                                          {heldBarang.map((b, idx) => (
+                                            <li key={'b'+idx} style={{ paddingBottom: '4px' }}>
+                                              {b.nama} {b.merk ? `(${b.merk})` : ''} {b.nomorSeri ? `- SN: ${b.nomorSeri}` : ''}
+                                            </li>
+                                          ))}
+                                        </ol>
+                                      ) : (
+                                        <ol style={{ listStyleType: 'decimal', margin: 0, paddingLeft: '20px' }}>
+                                          <li>.........................................................................................</li>
+                                        </ol>
+                                      )}
+                                    </div>
                                   </td>
                                 </tr>
                                 <tr>
                                   <td style={{ verticalAlign: 'top' }}>2.</td>
-                                  <td style={{ verticalAlign: 'top', textAlign: 'justify', paddingBottom: '8px' }}>Bahwa apabila saya dimutasi dan purna bakti, barang milik daerah tersebut akan dikembalikan ke Perangkat Daerah sesuai dengan status Penggunaannya.</td>
+                                  <td style={{ verticalAlign: 'top', textAlign: 'justify', paddingBottom: '8px' }}>Bahwa apabila saya dimutasi dan purna bakti, barang milik daerah tersebut akan dikembalikan ke Perangkat Daerah sesuai dengan status Penggunaannya</td>
                                 </tr>
                                 <tr>
                                   <td style={{ verticalAlign: 'top' }}>3.</td>
-                                  <td style={{ verticalAlign: 'top', textAlign: 'justify', paddingBottom: '8px' }}>Bahwa Pakta Integritas Penyerahan Barang Milik Daerah yang saya tandatangani ini berlaku juga sebagai Surat Kuasa kepada Pengguna Barang untuk menarik kembali secara langsung Barang Milik Daerah tersebut.</td>
+                                  <td style={{ verticalAlign: 'top', textAlign: 'justify', paddingBottom: '8px' }}>Bahwa Pakta Integritas Penyerahan Barang Milik Daerah yang saya tandatangani ini berlaku juga sebagai Surat Kuasa kepada Pengguna Barang untuk menarik kembali secara langsung Barang Milik Daerah tersebut</td>
                                 </tr>
                                 <tr>
                                   <td style={{ verticalAlign: 'top' }}>4.</td>
