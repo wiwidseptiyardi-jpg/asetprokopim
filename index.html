@@ -39,26 +39,22 @@
     
     /* Khusus untuk cetak dokumen administrasi (PDF) */
     @media print {
-      @page { margin: 0; size: A4 portrait; }
+      @page { margin: 1cm; size: landscape; }
       body { background-color: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
       .print-hide { display: none !important; }
       .print-doc-area { 
         width: 100% !important; 
         margin: 0 !important; 
-        padding: 2cm !important; 
+        padding: 0 !important; 
         box-shadow: none !important;
         border: none !important;
         background: transparent !important;
       }
       .page-break { page-break-before: always; }
-      /* Kelas khusus untuk halaman lampiran landscape */
-      .landscape-page {
-        page-break-before: always;
-        size: Legal landscape; 
-        width: 355mm !important; 
-        min-height: 215mm !important; 
-        padding: 2cm !important;
-      }
+      
+      table { border-collapse: collapse !important; width: 100% !important; }
+      th, td { border: 1px solid black !important; padding: 4px !important; font-size: 8pt !important; color: black !important; }
+      th { background-color: #f2f2f2 !important; font-weight: bold !important; text-align: center !important;}
     }
   </style>
 
@@ -83,7 +79,7 @@
     import React, { useState, useEffect, useRef } from 'react';
     import { 
       LayoutDashboard, Users, Package, Home, ClipboardList, LogOut, Plus, Search, Trash2, Edit3,
-      ChevronRight, UserCircle, FileText, AlertCircle, CheckCircle2, Download, X, Cloud, Info, Car, UserCheck, Filter, FileSignature, Printer, FileDown, Archive, PenTool, Save
+      ChevronRight, UserCircle, FileText, AlertCircle, CheckCircle2, Download, X, Cloud, Info, Car, UserCheck, Filter, FileSignature, Printer, FileDown, Archive, PenTool, Save, FileSpreadsheet
     } from 'lucide-react';
 
     import { initializeApp } from 'firebase/app';
@@ -103,7 +99,7 @@
       const base = "px-4 py-2 rounded-lg font-medium transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed";
       const variants = {
         primary: "bg-blue-600 text-white hover:bg-blue-700 shadow-md hover:shadow-lg",
-        secondary: "bg-gray-100 text-gray-700 hover:bg-gray-200",
+        secondary: "bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300",
         danger: "bg-red-500 text-white hover:bg-red-600",
         success: "bg-emerald-500 text-white hover:bg-emerald-600 shadow-md",
         outline: "border-2 border-blue-600 text-blue-600 hover:bg-blue-50"
@@ -130,7 +126,7 @@
               <h3 className="font-bold text-gray-800">{title}</h3>
               <button onClick={onClose} className="p-1 hover:bg-gray-200 rounded-full transition-colors text-gray-500"><X size={20} /></button>
             </div>
-            <div className="p-6 max-h-[80vh] overflow-y-auto">{children}</div>
+            <div className="p-6 max-h-[85vh] overflow-y-auto">{children}</div>
           </div>
         </div>
       );
@@ -250,6 +246,8 @@
       );
     };
 
+    const formatRupiah = (val) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(val);
+
     const useLocalStorage = (key, initialValue) => {
       const [value, setValue] = useState(() => {
         try { const item = window.localStorage.getItem(key); return item ? JSON.parse(item) : initialValue; } catch (error) { return initialValue; }
@@ -278,7 +276,8 @@
       const [ruangan, setRuangan] = useState([]);
       const [persediaan, setPersediaan] = useState([]);
       const [kendaraan, setKendaraan] = useState([]);
-      const [arsipSurat, setArsipSurat] = useState([]); // State Baru untuk Arsip
+      const [arsipSurat, setArsipSurat] = useState([]);
+      const [transaksiPersediaan, setTransaksiPersediaan] = useState([]); 
       
       const [registeredUsers, setRegisteredUsers] = useLocalStorage('easet_registered_users', []);
 
@@ -311,9 +310,20 @@
       const [ruanganData, setRuanganData] = useState({ id: null, nama: '', foto: '', items: [] });
       const [tempRuanganItem, setTempRuanganItem] = useState({ nama: '', jumlah: 1, kondisi: 'Baik' });
 
-      const initialPersediaanState = { kode: '', namaRekening: '', nama: '', satuan: '', saldoAwal: 0, penambahan: 0, pengeluaran: 0, hargaSatuan: 0 };
+      // State khusus Master Persediaan 
+      const initialPersediaanState = { tahun: new Date().getFullYear().toString(), kode: '', namaRekening: '', nama: '', satuan: '', saldoAwal: 0, hargaSatuan: 0 };
       const [persediaanData, setPersediaanData] = useState(initialPersediaanState);
-      const [stokData, setStokData] = useState({ idBarang: '', jenisTransaksi: 'Penambahan', jumlah: 1 });
+      
+      // State khusus Form Transaksi Persediaan (PPN dalam %)
+      const initialPenerimaanState = { id: null, idBarang: '', tanggal: new Date().toISOString().split('T')[0], sumber: 'GU', noDokumen: '', tglDokumen: '', jumlah: 1, hargaSatuan: 0, persenPPN: 0, hargaPPN: 0, totalHarga: 0, noBA: '', tglBA: '', keterangan: '' };
+      const [penerimaanData, setPenerimaanData] = useState(initialPenerimaanState);
+
+      const initialPengeluaranState = { id: null, idBarang: '', tanggal: new Date().toISOString().split('T')[0], jumlah: 1, untuk: 'Bagian Prokopim', keterangan: '' };
+      const [pengeluaranData, setPengeluaranData] = useState(initialPengeluaranState);
+
+      const [persediaanTab, setPersediaanTab] = useState('Buku Barang');
+      const [selectedKartuBarang, setSelectedKartuBarang] = useState('');
+      const [filterTahunPersediaan, setFilterTahunPersediaan] = useState(new Date().getFullYear().toString());
 
       const initialKendaraanState = { id: null, pemegang: '', nip: '', jabatan: '', noKendaraan: '', tahun: new Date().getFullYear().toString(), noRangka: '', noMesin: '', jenis: 'Roda 4 (Mobil)', namaKendaraan: '', tanggalPajak: '', kondisi: 'Baik' };
       const [kendaraanData, setKendaraanData] = useState(initialKendaraanState);
@@ -330,14 +340,15 @@
         jenisSurat: 'PAKTA', // Default
         tanggal: new Date().toISOString().split('T')[0],
         customLogo: '',
-        pihak1Id: '', // Pihak Pertama (Biasanya Yang Menyerahkan/Pengurus Barang)
-        pihak2Id: '', // Pihak Kedua (Yang Menerima)
+        pihak1Id: '', 
+        pihak2Id: '', 
         barangId: '', 
         kendaraanId: '',
         nomorSurat: '027/     /Prokopim/2026',
         referensiSurat: '',
-        kuasaPenggunaBarangId: '', // Terintegrasi dgn Pegawai
-        penggunaBarangId: '', // Terintegrasi dgn Pegawai
+        kuasaPenggunaBarangId: '', 
+        penggunaBarangId: '', 
+        alamat: '',
         bastNomor: '',
         bastTanggal: '',
         dokLainNama: '',
@@ -378,24 +389,49 @@
       const getBarangObj = (id) => barang.find(b => b.id === id) || { nama: '..........................', merk: '..........................', nomorSeri: '..........................', kondisi: '..........................' };
       const getKendaraanObj = (id) => kendaraan.find(k => k.id === id) || { namaKendaraan: '..........................', noKendaraan: '..........................', noRangka: '..........................', noMesin: '..........................', tahun: '..........................', jenis: 'Roda 4' };
 
-      // Helper Khusus Pakta Integritas & BAST (Auto-fill Aset berdasarkan Pegawai)
+      // Helper Khusus Pakta Integritas & BAST 
       const selectedPihak1 = getPegawaiObj(adminForm.pihak1Id);
       const selectedPihak2 = getPegawaiObj(adminForm.pihak2Id);
-      
-      // Auto-detect barang: Pakta/Lampiran dari Pihak 1, BAST dari Pihak 2
       const targetPihak = adminForm.jenisSurat === 'LAMPIRAN_PAKTA' || adminForm.jenisSurat === 'PAKTA' ? selectedPihak1 : selectedPihak2;
 
       const heldKendaraan = kendaraan.filter(k => k.pemegang === targetPihak.nama || k.nip === targetPihak.nip);
       const heldBarang = barang.filter(b => b.peminjamNama === targetPihak.nama || b.peminjamNip === targetPihak.nip);
-      
-      // Khusus untuk Pakta Integritas dan Lampirannya: Hanya barang yang dibawa ke Rumah
       const heldBarangPakta = heldBarang.filter(b => b.lokasi === 'Rumah');
-
       const allHeldItems = [...heldKendaraan.map(k => ({...k, isKendaraan: true})), ...heldBarang.map(b => ({...b, isKendaraan: false}))];
       const allHeldItemsPakta = [...heldKendaraan.map(k => ({...k, isKendaraan: true})), ...heldBarangPakta.map(b => ({...b, isKendaraan: false}))];
 
       const kuasaObj = getPegawaiObj(adminForm.kuasaPenggunaBarangId);
       const penggunaObj = getPegawaiObj(adminForm.penggunaBarangId);
+
+      // --- Helper Persediaan ---
+      const getPersediaanStats = (idBarang) => {
+        const p = persediaan.find(x => x.id === idBarang);
+        if (!p) return { awal:0, masuk:0, keluar:0, akhir:0, harga:0, totalMasukRp: 0 };
+        const txMasuk = transaksiPersediaan.filter(t => t.idBarang === idBarang && t.jenis === 'Penerimaan');
+        const txKeluar = transaksiPersediaan.filter(t => t.idBarang === idBarang && t.jenis === 'Pengeluaran');
+        
+        const jmlMasuk = txMasuk.reduce((sum, t) => sum + parseInt(t.jumlah || 0), 0);
+        const jmlKeluar = txKeluar.reduce((sum, t) => sum + parseInt(t.jumlah || 0), 0);
+        const awal = parseInt(p.saldoAwal || 0);
+        
+        return {
+          awal: awal,
+          masuk: jmlMasuk,
+          keluar: jmlKeluar,
+          akhir: awal + jmlMasuk - jmlKeluar,
+          harga: parseInt(p.hargaSatuan || 0),
+          totalMasukRp: txMasuk.reduce((sum, t) => sum + parseInt(t.totalHarga || 0), 0),
+        };
+      };
+
+      // Export Table to Excel khusus Persediaan
+      const exportTableToExcel = (tableId, filename) => {
+        const table = document.getElementById(tableId);
+        if (!table) return;
+        const wb = window.XLSX.utils.table_to_book(table, { sheet: "Sheet1" });
+        window.XLSX.writeFile(wb, `${filename}.xlsx`);
+        showToast(`Berhasil mengunduh ${filename}.xlsx`);
+      };
 
       // --- Firebase Init ---
       useEffect(() => {
@@ -412,7 +448,7 @@
 
       useEffect(() => {
         if (!firebaseUser || !db) return;
-        const collections = ['pegawai', 'barang', 'ruangan', 'persediaan', 'kendaraan', 'arsip_surat'];
+        const collections = ['pegawai', 'barang', 'ruangan', 'persediaan', 'kendaraan', 'arsip_surat', 'transaksi_persediaan'];
         const unsubscribes = collections.map(colName => {
           const colRef = collection(db, 'artifacts', appId, 'users', firebaseUser.uid, colName);
           return onSnapshot(colRef, (snapshot) => {
@@ -423,6 +459,7 @@
             if (colName === 'persediaan') setPersediaan(data);
             if (colName === 'kendaraan') setKendaraan(data);
             if (colName === 'arsip_surat') setArsipSurat(data);
+            if (colName === 'transaksi_persediaan') setTransaksiPersediaan(data);
           }, (error) => console.error(error));
         });
         return () => unsubscribes.forEach(unsub => unsub());
@@ -439,6 +476,7 @@
            if(colName === 'persediaan') setPersediaan(prev => { const idx = prev.findIndex(p => p.id === id); return idx >= 0 ? prev.map(p => p.id === id ? data : p) : [...prev, data] });
            if(colName === 'kendaraan') setKendaraan(prev => { const idx = prev.findIndex(p => p.id === id); return idx >= 0 ? prev.map(p => p.id === id ? data : p) : [...prev, data] });
            if(colName === 'arsip_surat') setArsipSurat(prev => { const idx = prev.findIndex(p => p.id === id); return idx >= 0 ? prev.map(p => p.id === id ? data : p) : [...prev, data] });
+           if(colName === 'transaksi_persediaan') setTransaksiPersediaan(prev => { const idx = prev.findIndex(p => p.id === id); return idx >= 0 ? prev.map(p => p.id === id ? data : p) : [...prev, data] });
            return;
         }
         const docRef = doc(db, 'artifacts', appId, 'users', firebaseUser.uid, colName, id.toString());
@@ -453,6 +491,7 @@
            if(colName === 'persediaan') setPersediaan(prev => prev.filter(p => p.id !== id));
            if(colName === 'kendaraan') setKendaraan(prev => prev.filter(p => p.id !== id));
            if(colName === 'arsip_surat') setArsipSurat(prev => prev.filter(p => p.id !== id));
+           if(colName === 'transaksi_persediaan') setTransaksiPersediaan(prev => prev.filter(p => p.id !== id));
            return;
         }
         const docRef = doc(db, 'artifacts', appId, 'users', firebaseUser.uid, colName, id.toString());
@@ -531,20 +570,29 @@
         await saveToDb('ruangan', id, { ...ruanganData, id }); showToast("Inventaris Ruangan Disimpan"); setModalType(null);
       };
 
-      const handleSaveStok = async (e) => {
-        e.preventDefault(); if (!stokData.idBarang) return;
-        const target = persediaan.find(p => p.id.toString() === stokData.idBarang.toString());
-        if (target) {
-          const qty = parseInt(stokData.jumlah); const payload = { ...target };
-          if (stokData.jenisTransaksi === 'Penambahan') payload.penambahan += qty; else payload.pengeluaran += qty;
-          await saveToDb('persediaan', target.id, payload); setModalType(null); showToast(`Stok berhasil diupdate`);
-        }
-      };
-
+      // Handler Master Persediaan
       const handleSavePersediaan = async (e) => {
         e.preventDefault(); const id = persediaanData.id || Date.now().toString();
-        await saveToDb('persediaan', id, { ...persediaanData, id, saldoAwal: parseInt(persediaanData.saldoAwal)||0, penambahan: parseInt(persediaanData.penambahan)||0, pengeluaran: parseInt(persediaanData.pengeluaran)||0, hargaSatuan: parseInt(persediaanData.hargaSatuan)||0 });
-        showToast("Data Persediaan Disimpan"); setModalType(null);
+        await saveToDb('persediaan', id, { ...persediaanData, id, saldoAwal: parseInt(persediaanData.saldoAwal)||0, hargaSatuan: parseInt(persediaanData.hargaSatuan)||0 });
+        showToast("Master Barang Persediaan Disimpan"); setModalType(null);
+      };
+
+      // Handler Transaksi Penerimaan
+      const handleSavePenerimaan = async (e) => {
+        e.preventDefault();
+        const id = penerimaanData.id || Date.now().toString();
+        await saveToDb('transaksi_persediaan', id, { ...penerimaanData, id, jenis: 'Penerimaan', jumlah: parseInt(penerimaanData.jumlah)||0, hargaSatuan: parseInt(penerimaanData.hargaSatuan)||0, persenPPN: parseInt(penerimaanData.persenPPN)||0, hargaPPN: parseInt(penerimaanData.hargaPPN)||0, totalHarga: parseInt(penerimaanData.totalHarga)||0 });
+        showToast("Transaksi Penerimaan Disimpan");
+        setModalType(null);
+      };
+
+      // Handler Transaksi Pengeluaran
+      const handleSavePengeluaran = async (e) => {
+        e.preventDefault();
+        const id = pengeluaranData.id || Date.now().toString();
+        await saveToDb('transaksi_persediaan', id, { ...pengeluaranData, id, jenis: 'Pengeluaran', jumlah: parseInt(pengeluaranData.jumlah)||0 });
+        showToast("Transaksi Pengeluaran Disimpan");
+        setModalType(null);
       };
 
       const handleSaveKendaraan = async (e) => {
@@ -707,7 +755,7 @@
       const barangTidakDiketahui = barang.filter(b => b.status === 'Tidak Diketahui').length;
 
       // --- Setup Print Variables ---
-      const isLandscapeView = adminForm.jenisSurat === 'LAMPIRAN_PAKTA';
+      const isLandscapeView = adminForm.jenisSurat === 'LAMPIRAN_PAKTA' || view === 'persediaan';
 
       const SidebarItem = ({ id, icon: Icon, label }) => (
         <button onClick={() => setView(id)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 print-hide ${view === id ? "bg-blue-600 text-white shadow-md" : "text-gray-500 hover:bg-blue-50 hover:text-blue-600"}`}>
@@ -752,6 +800,10 @@
           </div>
         );
       }
+
+      // Filter Persediaan berdasarkan Tahun Anggaran
+      const persediaanFiltered = persediaan.filter(p => p.tahun === filterTahunPersediaan);
+      const transaksiFiltered = transaksiPersediaan.filter(t => new Date(t.tanggal).getFullYear().toString() === filterTahunPersediaan);
 
       // --- Main Layout ---
       return (
@@ -851,23 +903,6 @@
             </form>
           </Modal>
 
-          <Modal isOpen={modalType === 'stok'} onClose={() => setModalType(null)} title="Update Stok Persediaan">
-            <form onSubmit={handleSaveStok}>
-              <Select label="Barang Persediaan" value={stokData.idBarang} onChange={(val) => setStokData({...stokData, idBarang: val})} options={persediaan.map(p => ({ label: `${p.kode} - ${p.nama}`, value: p.id }))} required />
-              <div className="grid grid-cols-2 gap-4"><Select label="Jenis Transaksi" value={stokData.jenisTransaksi} onChange={(val) => setStokData({...stokData, jenisTransaksi: val})} options={['Penambahan', 'Pengeluaran']} required /><Input label="Jumlah" type="number" min="1" value={stokData.jumlah} onChange={(val) => setStokData({...stokData, jumlah: val})} required /></div>
-              <Button type="submit" className="w-full mt-2">Simpan Update Stok</Button>
-            </form>
-          </Modal>
-
-          <Modal isOpen={modalType === 'persediaan_form'} onClose={() => setModalType(null)} title={persediaanData.id ? "Edit Persediaan" : "Tambah Persediaan"}>
-            <form onSubmit={handleSavePersediaan}>
-              <div className="grid grid-cols-2 gap-4"><Input label="Kode Rekening" value={persediaanData.kode} onChange={(val) => setPersediaanData({...persediaanData, kode: val})} required /><Input label="Nama Rekening" value={persediaanData.namaRekening} onChange={(val) => setPersediaanData({...persediaanData, namaRekening: val})} required /></div>
-              <div className="grid grid-cols-2 gap-4"><Input label="Nama Barang" value={persediaanData.nama} onChange={(val) => setPersediaanData({...persediaanData, nama: val})} required /><Input label="Satuan" value={persediaanData.satuan} onChange={(val) => setPersediaanData({...persediaanData, satuan: val})} required /></div>
-              <div className="grid grid-cols-2 gap-4"><Input label="Saldo Awal" type="number" min="0" value={persediaanData.saldoAwal} onChange={(val) => setPersediaanData({...persediaanData, saldoAwal: val})} required /><Input label="Harga Satuan (Rp)" type="number" min="0" value={persediaanData.hargaSatuan} onChange={(val) => setPersediaanData({...persediaanData, hargaSatuan: val})} required /></div>
-              <Button type="submit" className="w-full mt-4">Simpan Persediaan</Button>
-            </form>
-          </Modal>
-
           <Modal isOpen={modalType === 'kendaraan'} onClose={() => setModalType(null)} title={kendaraanData.id ? "Edit Kendaraan" : "Tambah Kendaraan Baru"}>
             <form onSubmit={handleSaveKendaraan}>
               <Select label="Nama Pemegang" value={kendaraanData.pemegang} onChange={(val) => { const pg = pegawai.find(p => p.nama === val); setKendaraanData({...kendaraanData, pemegang: val, nip: pg?pg.nip:'', jabatan: pg?pg.jabatan:''}); }} options={pegawai.map(p => p.nama)} placeholder="Pilih Pemegang" required />
@@ -903,6 +938,111 @@
             </div>
           </Modal>
 
+          {/* Form Modal Persediaan Master (Diperbarui dengan Tahun Anggaran) */}
+          <Modal isOpen={modalType === 'persediaan_form'} onClose={() => setModalType(null)} title={persediaanData.id ? "Edit Master Persediaan" : "Tambah Master Persediaan Baru"}>
+            <form onSubmit={handleSavePersediaan}>
+              <Input label="Tahun Anggaran" type="number" value={persediaanData.tahun} onChange={(val) => setPersediaanData({...persediaanData, tahun: val})} required />
+              <div className="grid grid-cols-2 gap-4">
+                <Input label="Kode Rekening" value={persediaanData.kode} onChange={(val) => setPersediaanData({...persediaanData, kode: val})} placeholder="Cth: 5.1.02.01.01.0012" required />
+                <Input label="Nama Rekening" value={persediaanData.namaRekening} onChange={(val) => setPersediaanData({...persediaanData, namaRekening: val})} placeholder="Cth: Belanja Bahan Lainnya" required />
+              </div>
+              <Input label="Nama / Jenis Barang" value={persediaanData.nama} onChange={(val) => setPersediaanData({...persediaanData, nama: val})} placeholder="Cth: Handsanitizer 1 Liter" required />
+              <div className="grid grid-cols-3 gap-4">
+                <Input label="Satuan" value={persediaanData.satuan} onChange={(val) => setPersediaanData({...persediaanData, satuan: val})} placeholder="Cth: Liter, Rim, Buah" required />
+                <Input label="Saldo Awal" type="number" min="0" value={persediaanData.saldoAwal} onChange={(val) => setPersediaanData({...persediaanData, saldoAwal: val})} required />
+                <Input label="Harga Satuan (Rp)" type="number" min="0" value={persediaanData.hargaSatuan} onChange={(val) => setPersediaanData({...persediaanData, hargaSatuan: val})} required />
+              </div>
+              <div className="bg-blue-50 text-blue-800 p-3 rounded-lg mb-4 text-xs font-medium mt-2">
+                *Saldo Akhir akan dihitung otomatis berdasarkan transaksi penerimaan dan pengeluaran yang dicatat.
+              </div>
+              <Button type="submit" className="w-full mt-2">Simpan Master Persediaan</Button>
+            </form>
+          </Modal>
+
+          {/* Form Modal Penerimaan (Diperbarui dengan % PPN) */}
+          <Modal isOpen={modalType === 'penerimaan_form'} onClose={() => setModalType(null)} title="Catat Penerimaan Barang Baru" width="max-w-3xl">
+            <form onSubmit={handleSavePenerimaan}>
+              <Select 
+                label={`Pilih Barang Persediaan (T.A. ${filterTahunPersediaan})`} 
+                value={penerimaanData.idBarang} 
+                onChange={(val) => {
+                   const brg = persediaanFiltered.find(p => p.id === val);
+                   setPenerimaanData({...penerimaanData, idBarang: val, hargaSatuan: brg ? brg.hargaSatuan : 0});
+                }} 
+                options={persediaanFiltered.map(p => ({ label: `${p.kode} - ${p.nama}`, value: p.id }))} 
+                required 
+              />
+              
+              <div className="grid grid-cols-3 gap-4">
+                <Input label="Tanggal Diterima" type="date" value={penerimaanData.tanggal} onChange={(val) => setPenerimaanData({...penerimaanData, tanggal: val})} required />
+                <Select label="Dari Sumber" value={penerimaanData.sumber} onChange={(val) => setPenerimaanData({...penerimaanData, sumber: val})} options={['LS', 'GU', 'Lainnya']} required />
+                <Input label="Jumlah Masuk" type="number" min="1" value={penerimaanData.jumlah} onChange={(val) => {
+                  const jml = parseInt(val)||0;
+                  const hs = parseInt(penerimaanData.hargaSatuan)||0;
+                  const ppnNominal = parseInt(penerimaanData.hargaPPN)||0;
+                  setPenerimaanData({...penerimaanData, jumlah: val, totalHarga: jml * (hs + ppnNominal)});
+                }} required />
+              </div>
+              
+              <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 mb-4 mt-2">
+                 <h4 className="text-sm font-bold text-gray-700 mb-3 border-b pb-2">Detail Harga</h4>
+                 <div className="grid grid-cols-4 gap-4">
+                    <Input label="Harga Satuan (Rp)" type="number" min="0" value={penerimaanData.hargaSatuan} onChange={(val) => {
+                      const hs = parseInt(val)||0;
+                      const jml = parseInt(penerimaanData.jumlah)||0;
+                      const persentase = parseInt(penerimaanData.persenPPN)||0;
+                      const ppnNominal = Math.round(hs * (persentase / 100));
+                      setPenerimaanData({...penerimaanData, hargaSatuan: val, hargaPPN: ppnNominal, totalHarga: jml * (hs + ppnNominal)});
+                    }} required />
+                    <Input label="Persentase PPN (%)" type="number" min="0" max="100" value={penerimaanData.persenPPN} onChange={(val) => {
+                      const persentase = parseInt(val)||0;
+                      const hs = parseInt(penerimaanData.hargaSatuan)||0;
+                      const jml = parseInt(penerimaanData.jumlah)||0;
+                      const ppnNominal = Math.round(hs * (persentase / 100));
+                      setPenerimaanData({...penerimaanData, persenPPN: val, hargaPPN: ppnNominal, totalHarga: jml * (hs + ppnNominal)});
+                    }} />
+                    <Input label="Nominal PPN (Rp)" type="number" value={penerimaanData.hargaPPN} readOnly disabled />
+                    <Input label="Total Harga Akhir (Rp)" type="number" value={penerimaanData.totalHarga} readOnly disabled />
+                 </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                  <h4 className="text-xs font-bold text-gray-700 mb-2">Dokumen Surat</h4>
+                  <Input label="Nomor Dokumen" value={penerimaanData.noDokumen} onChange={(val) => setPenerimaanData({...penerimaanData, noDokumen: val})} placeholder="Cth: 027-GU/001" />
+                  <Input label="Tanggal Dokumen" type="date" value={penerimaanData.tglDokumen} onChange={(val) => setPenerimaanData({...penerimaanData, tglDokumen: val})} />
+                </div>
+                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                  <h4 className="text-xs font-bold text-gray-700 mb-2">B.A. Penerimaan</h4>
+                  <Input label="Nomor B.A." value={penerimaanData.noBA} onChange={(val) => setPenerimaanData({...penerimaanData, noBA: val})} placeholder="Cth: 027-GU/001" />
+                  <Input label="Tanggal B.A." type="date" value={penerimaanData.tglBA} onChange={(val) => setPenerimaanData({...penerimaanData, tglBA: val})} />
+                </div>
+              </div>
+              
+              <Input label="Ket / PPTK" value={penerimaanData.keterangan} onChange={(val) => setPenerimaanData({...penerimaanData, keterangan: val})} placeholder="Catatan tambahan..." />
+              <Button type="submit" className="w-full mt-2">Simpan Bukti Penerimaan</Button>
+            </form>
+          </Modal>
+
+          <Modal isOpen={modalType === 'pengeluaran_form'} onClose={() => setModalType(null)} title="Catat Pengeluaran Barang">
+            <form onSubmit={handleSavePengeluaran}>
+              <Select 
+                label={`Pilih Barang (T.A. ${filterTahunPersediaan})`} 
+                value={pengeluaranData.idBarang} 
+                onChange={(val) => setPengeluaranData({...pengeluaranData, idBarang: val})} 
+                options={persediaanFiltered.map(p => ({ label: `${p.kode} - ${p.nama} (Sisa: ${getPersediaanStats(p.id).akhir})`, value: p.id }))} 
+                required 
+              />
+              <div className="grid grid-cols-2 gap-4">
+                <Input label="Tanggal Dikeluarkan" type="date" value={pengeluaranData.tanggal} onChange={(val) => setPengeluaranData({...pengeluaranData, tanggal: val})} required />
+                <Input label="Jumlah Keluar" type="number" min="1" value={pengeluaranData.jumlah} onChange={(val) => setPengeluaranData({...pengeluaranData, jumlah: val})} required />
+              </div>
+              <Select label="Diberikan Kepada / Untuk" value={pengeluaranData.untuk} onChange={(val) => setPengeluaranData({...pengeluaranData, untuk: val})} options={['Bagian Prokopim', 'Sub Bagian Protokol', 'Sub Bagian Komunikasi Pimpinan', 'Sub Bagian Dokumentasi Pimpinan', 'Lainnya']} required />
+              <Input label="Keterangan / Catatan Tambahan" value={pengeluaranData.keterangan} onChange={(val) => setPengeluaranData({...pengeluaranData, keterangan: val})} placeholder="Opsional..." />
+              <Button type="submit" className="w-full mt-4" variant="danger">Catat Pengeluaran Keluar</Button>
+            </form>
+          </Modal>
+
           <aside className="w-64 bg-white border-r border-gray-200 p-6 flex flex-col hidden md:flex print-hide">
             <div className="flex items-center gap-3 mb-10 px-2"><div className="p-2 bg-blue-600 rounded-lg text-white"><Package size={24} /></div><h1 className="font-bold text-xl tracking-tight">Aset <span className="text-blue-600">Monitoring</span></h1></div>
             <nav className="space-y-2 flex-1">
@@ -925,8 +1065,16 @@
           <main className="flex-1 overflow-y-auto h-screen print:h-auto print:overflow-visible print-doc-area">
             <header className="bg-white border-b border-gray-200 px-8 py-4 flex items-center justify-between sticky top-0 z-10 print-hide">
               <h2 className="text-xl font-bold text-gray-800 capitalize">{view.replace(/([A-Z])/g, ' $1').trim()}</h2>
-              {/* Opsi Cetak Standar untuk Tampilan Selain Administrasi */}
-              {view !== 'administrasi' && view !== 'arsip' && <Button variant="outline" onClick={window.print} className="text-sm h-10"><Download size={16} /> Unduh Laporan</Button>}
+              {/* Opsi Cetak Standar untuk Tampilan Selain Administrasi dan Persediaan */}
+              {view !== 'administrasi' && view !== 'arsip' && view !== 'persediaan' && <Button variant="outline" onClick={window.print} className="text-sm h-10"><Download size={16} /> Unduh Laporan</Button>}
+              
+              {/* Opsi Ekspor Khusus Persediaan */}
+              {view === 'persediaan' && (
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={window.print} className="text-sm h-10 border-red-500 text-red-600 hover:bg-red-50"><Printer size={16} /> Cetak PDF</Button>
+                  <Button variant="outline" onClick={() => exportTableToExcel('persediaan-table-export', `Laporan_${persediaanTab}_${filterTahunPersediaan}`)} className="text-sm h-10 border-green-500 text-green-600 hover:bg-green-50"><FileSpreadsheet size={16} /> Excel (.xlsx)</Button>
+                </div>
+              )}
             </header>
 
             <div className="p-8 max-w-7xl mx-auto print:p-0">
@@ -1052,7 +1200,7 @@
 
               {view === 'ruangan' && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {ruangan.map(r => (<div key={r.id} className="bg-white rounded-xl border overflow-hidden shadow-sm flex flex-col"><div className="relative p-6 text-white min-h-[120px] flex items-center"><div className="absolute inset-0 z-0">{r.foto ? <><img src={r.foto} className="w-full h-full object-cover"/><div className="absolute inset-0 bg-black/60"></div></> : <div className="w-full h-full bg-blue-600"></div>}</div><div className="relative z-10"><h4 className="font-bold text-lg">{r.nama}</h4></div></div><div className="p-6 flex-1"><table className="w-full text-sm text-left"><thead className="text-gray-500 border-b border-dashed"><tr><th className="py-1">Barang</th><th className="py-1 text-center">Jml</th><th className="py-1 text-right">Kondisi</th></tr></thead><tbody>{r.items?.map(i => <tr key={i.id} className="border-b border-gray-50"><td className="py-2">{i.nama}</td><td className="py-2 text-center">{i.jumlah}</td><td className="py-2 text-right">{i.kondisi}</td></tr>)}</tbody></table></div><div className="px-6 py-4 bg-gray-50 border-t flex gap-2 print-hide"><button onClick={() => { setRuanganData(r); setModalType('ruangan'); }} className="flex-1 py-2 bg-white border text-blue-600 rounded flex items-center justify-center gap-2"><Edit3 size={16}/> Edit</button><button onClick={() => askConfirm('Hapus seluruh ruangan ini?', () => deleteFromDb('ruangan', r.id))} className="flex-1 py-2 bg-white border text-red-600 rounded flex items-center justify-center gap-2"><Trash2 size={16}/> Hapus</button></div></div>))}
+                  {ruangan.map(r => (<div key={r.id} className="bg-white rounded-xl border overflow-hidden shadow-sm flex flex-col"><div className="relative p-6 text-white min-h-[120px] flex items-center"><div className="absolute inset-0 z-0">{r.foto ? <><img src={r.foto} className="w-full h-full object-cover"/><div className="absolute inset-0 bg-black/60"></div></> : <div className="w-full h-full bg-blue-600"></div>}</div><div className="relative z-10"><h4 className="font-bold text-lg">{r.nama}</h4></div></div><div className="p-6 flex-1"><table className="w-full text-sm text-left"><thead className="text-gray-500 border-b border-dashed"><tr><th className="py-1">Barang</th><th className="py-1 text-center">Jml</th><th className="py-1 text-right">Kondisi</th></tr></thead><tbody>{r.items?.map(i => <tr key={i.id} className="border-b border-gray-50"><td className="py-2">{i.nama}</td><td className="py-2 text-center">{i.jumlah}</td><td className="py-2 text-right">{i.kondisi}</td></tr>)}</tbody></table></div><div className="px-6 py-4 bg-gray-50 border-t flex gap-2 print-hide"><button onClick={() => { setRuanganData(r); setModalType('ruangan'); }} className="flex-1 py-2 bg-white border text-blue-600 rounded flex items-center justify-center gap-2"><Edit3 size={16}/> Edit</button><button onClick={() => { if(window.confirm('Hapus seluruh ruangan ini?')) deleteFromDb('ruangan', r.id); }} className="flex-1 py-2 bg-white border text-red-600 rounded flex items-center justify-center gap-2"><Trash2 size={16}/> Hapus</button></div></div>))}
                   <div onClick={() => { setRuanganData({id:null, nama:'', foto:'', items:[]}); setModalType('ruangan'); }} className="border-2 border-dashed border-gray-300 rounded-xl flex items-center justify-center p-12 hover:bg-blue-50 cursor-pointer text-center print-hide"><Plus className="mx-auto text-gray-400 mb-2" size={32}/><p className="font-medium text-gray-500">Tambah Ruangan</p></div>
                 </div>
               )}
@@ -1060,14 +1208,378 @@
               {view === 'kendaraan' && (
                 <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                   <div className="p-6 border-b flex justify-between print-hide"><h3 className="font-bold text-lg">Kendaraan Dinas</h3><Button onClick={() => { setKendaraanData(initialKendaraanState); setModalType('kendaraan'); }}><Plus size={18}/> Tambah</Button></div>
-                  <div className="overflow-x-auto"><table className="w-full text-left whitespace-nowrap text-xs"><thead className="bg-gray-50 text-gray-500 uppercase text-[10px] font-bold border-b"><tr><th className="px-4 py-3">Kendaraan</th><th className="px-4 py-3">No. Polisi / Detail</th><th className="px-4 py-3">Pemegang</th><th className="px-4 py-3">Jenis</th><th className="px-4 py-3">Tgl Pajak</th><th className="px-4 py-3 print-hide">Aksi</th></tr></thead><tbody className="divide-y divide-gray-100">{kendaraan.map(k => (<tr key={k.id} className="hover:bg-gray-50"><td className="px-4 py-3"><p className="font-bold text-gray-800">{k.namaKendaraan}</p><p className="text-[10px] text-gray-500">Tahun: {k.tahun}</p></td><td className="px-4 py-3"><span className="font-mono font-bold text-blue-700 bg-blue-50 px-2 py-1 rounded">{k.noKendaraan}</span><div className="mt-1 text-[10px] text-gray-500"><p>Rangka: {k.noRangka || '-'}</p><p>Mesin: {k.noMesin || '-'}</p></div></td><td className="px-4 py-3"><p className="font-medium text-gray-800">{k.pemegang}</p><p className="text-[10px] text-gray-500 font-mono">{k.nip}</p></td><td className="px-4 py-3 text-gray-600">{k.jenis}</td><td className="px-4 py-3 font-mono text-gray-600">{k.tanggalPajak ? new Date(k.tanggalPajak).toLocaleDateString('id-ID', {day:'2-digit', month:'long', year:'numeric'}) : '-'}</td><td className="px-4 py-3 print-hide"><div className="flex gap-1"><button className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" onClick={() => { setKendaraanData(k); setModalType('kendaraan'); }}><Edit3 size={14}/></button><button className="p-1.5 text-red-500 hover:bg-red-50 rounded" onClick={() => askConfirm("Hapus kendaraan ini?", () => deleteFromDb('kendaraan', k.id))}><Trash2 size={14}/></button></div></td></tr>))}</tbody></table></div>
+                  <div className="overflow-x-auto"><table className="w-full text-left whitespace-nowrap text-xs"><thead className="bg-gray-50 text-gray-500 uppercase text-[10px] font-bold border-b"><tr><th className="px-4 py-3">Kendaraan</th><th className="px-4 py-3">No. Polisi / Detail</th><th className="px-4 py-3">Pemegang</th><th className="px-4 py-3">Jenis</th><th className="px-4 py-3">Tgl Pajak</th><th className="px-4 py-3 print-hide">Aksi</th></tr></thead><tbody className="divide-y divide-gray-100">{kendaraan.map(k => (<tr key={k.id} className="hover:bg-gray-50"><td className="px-4 py-3"><p className="font-bold text-gray-800">{k.namaKendaraan}</p><p className="text-[10px] text-gray-500">Tahun: {k.tahun}</p></td><td className="px-4 py-3"><span className="font-mono font-bold text-blue-700 bg-blue-50 px-2 py-1 rounded">{k.noKendaraan}</span><div className="mt-1 text-[10px] text-gray-500"><p>Rangka: {k.noRangka || '-'}</p><p>Mesin: {k.noMesin || '-'}</p></div></td><td className="px-4 py-3"><p className="font-medium text-gray-800">{k.pemegang}</p><p className="text-[10px] text-gray-500 font-mono">{k.nip}</p></td><td className="px-4 py-3 text-gray-600">{k.jenis}</td><td className="px-4 py-3 font-mono text-gray-600">{k.tanggalPajak ? new Date(k.tanggalPajak).toLocaleDateString('id-ID', {day:'2-digit', month:'long', year:'numeric'}) : '-'}</td><td className="px-4 py-3 print-hide"><div className="flex gap-1"><button className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" onClick={() => { setKendaraanData(k); setModalType('kendaraan'); }}><Edit3 size={14}/></button><button className="p-1.5 text-red-500 hover:bg-red-50 rounded" onClick={() => { if(window.confirm('Hapus kendaraan ini?')) deleteFromDb('kendaraan', k.id); }}><Trash2 size={14}/></button></div></td></tr>))}</tbody></table></div>
                 </div>
               )}
 
+              {/* --- TAMPILAN BARU UNTUK BARANG PERSEDIAAN --- */}
               {view === 'persediaan' && (
                 <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                  <div className="p-6 border-b flex justify-between print-hide"><h3 className="font-bold text-lg">Kartu Persediaan</h3><div className="flex gap-2"><Button variant="secondary" onClick={() => { setStokData({idBarang:'', jenisTransaksi:'Penambahan', jumlah:1}); setModalType('stok'); }}>Update Stok</Button><Button onClick={() => { setPersediaanData(initialPersediaanState); setModalType('persediaan_form'); }}>Tambah Barang</Button></div></div>
-                  <div className="overflow-x-auto"><table className="w-full text-left text-xs whitespace-nowrap"><thead className="bg-gray-50 text-gray-500 uppercase font-bold border-b text-[10px]"><tr><th className="px-3 py-2 text-center border-r">Kode</th><th className="px-3 py-2">Barang</th><th className="px-3 py-2 text-center">Saldo Awal</th><th className="px-3 py-2 text-center text-green-600">Tambah</th><th className="px-3 py-2 text-center text-red-600">Keluar</th><th className="px-3 py-2 text-center">Saldo Akhir</th><th className="px-3 py-2 print-hide">Aksi</th></tr></thead><tbody className="divide-y divide-gray-100">{persediaan.map(p => { const saldo = p.saldoAwal + p.penambahan - p.pengeluaran; return (<tr key={p.id} className="hover:bg-gray-50"><td className="px-3 py-2 text-center font-mono text-[10px] border-r">{p.kode}</td><td className="px-3 py-2"><p className="font-bold text-gray-800">{p.nama}</p><p className="text-[10px] text-gray-500">{p.satuan}</p></td><td className="px-3 py-2 text-center">{p.saldoAwal}</td><td className="px-3 py-2 text-center font-bold text-green-600">{p.penambahan}</td><td className="px-3 py-2 text-center font-bold text-red-600">{p.pengeluaran}</td><td className="px-3 py-2 text-center font-bold bg-gray-50">{saldo}</td><td className="px-3 py-2 print-hide"><div className="flex justify-center gap-1"><button className="text-blue-600 p-1.5 hover:bg-blue-50 rounded" onClick={() => { setPersediaanData(p); setModalType('persediaan_form'); }}><Edit3 size={14}/></button><button className="text-red-500 p-1.5 hover:bg-red-50 rounded" onClick={() => askConfirm("Hapus persediaan ini?", () => deleteFromDb('persediaan', p.id))}><Trash2 size={14}/></button></div></td></tr>)})}</tbody></table></div>
+                  <div className="p-6 border-b flex justify-between items-center print-hide">
+                    <div className="flex items-center gap-3">
+                      <h3 className="font-bold text-lg">Administrasi Barang Persediaan</h3>
+                      <Select 
+                        options={['2024', '2025', '2026', '2027']} 
+                        value={filterTahunPersediaan} 
+                        onChange={setFilterTahunPersediaan} 
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button variant="secondary" className="text-xs h-9" onClick={() => { setPenerimaanData(initialPenerimaanState); setModalType('penerimaan_form'); }}>+ Catat Penerimaan</Button>
+                      <Button variant="secondary" className="text-xs h-9 border border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700" onClick={() => { setPengeluaranData(initialPengeluaranState); setModalType('pengeluaran_form'); }}>- Catat Pengeluaran</Button>
+                      <Button variant="primary" className="text-xs h-9" onClick={() => { setPersediaanData(initialPersediaanState); setModalType('persediaan_form'); }}>+ Master Barang Baru</Button>
+                    </div>
+                  </div>
+                  
+                  {/* Multi-Tab Navigation */}
+                  <div className="bg-gray-50 border-b px-6 flex space-x-4 overflow-x-auto print-hide">
+                    {['Buku Barang', 'Buku Penerimaan', 'Buku Pengeluaran', 'Kartu Barang', 'Laporan Rekapitulasi'].map(tab => (
+                      <button key={tab} onClick={() => setPersediaanTab(tab)} className={`py-3 border-b-2 font-medium text-sm whitespace-nowrap transition-colors ${persediaanTab === tab ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+                        {tab}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="p-6 overflow-x-auto">
+                    
+                    {/* TAB: BUKU BARANG (MASTER) */}
+                    {persediaanTab === 'Buku Barang' && (
+                      <div>
+                        <div className="text-center mb-6 hidden print:block">
+                          <h2 className="font-bold text-lg underline uppercase">Buku Barang Persediaan</h2>
+                          <p className="text-xs mt-1">TAHUN ANGGARAN {filterTahunPersediaan}</p>
+                        </div>
+                        <table id="persediaan-table-export" className="w-full text-left text-xs whitespace-nowrap border-collapse border border-gray-200">
+                          <thead className="bg-gray-100 text-gray-700 font-bold">
+                            <tr>
+                              <th rowSpan="2" className="p-2 border">Kode Rek.</th>
+                              <th rowSpan="2" className="p-2 border">Nama Barang</th>
+                              <th colSpan="3" className="p-2 border text-center">Saldo Awal</th>
+                              <th colSpan="3" className="p-2 border text-center text-green-600 bg-green-50">Penerimaan</th>
+                              <th colSpan="3" className="p-2 border text-center text-red-600 bg-red-50">Pengeluaran</th>
+                              <th colSpan="3" className="p-2 border text-center text-blue-600 bg-blue-50">Saldo Akhir</th>
+                              <th rowSpan="2" className="p-2 border text-center print-hide">Aksi</th>
+                            </tr>
+                            <tr>
+                              <th className="p-2 border text-center font-normal">Vol</th><th className="p-2 border text-right font-normal">Hrg Satuan</th><th className="p-2 border text-right font-normal">Jml Harga</th>
+                              <th className="p-2 border text-center font-normal bg-green-50">Vol</th><th className="p-2 border text-right font-normal bg-green-50">Hrg Satuan</th><th className="p-2 border text-right font-normal bg-green-50">Jml Harga</th>
+                              <th className="p-2 border text-center font-normal bg-red-50">Vol</th><th className="p-2 border text-right font-normal bg-red-50">Hrg Satuan</th><th className="p-2 border text-right font-normal bg-red-50">Jml Harga</th>
+                              <th className="p-2 border text-center font-normal bg-blue-50">Vol</th><th className="p-2 border text-right font-normal bg-blue-50">Hrg Satuan</th><th className="p-2 border text-right font-normal bg-blue-50">Jml Harga</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {persediaanFiltered.length === 0 && <tr><td colSpan="15" className="p-4 text-center text-gray-400 italic">Belum ada master barang di tahun {filterTahunPersediaan}.</td></tr>}
+                            {persediaanFiltered.map(p => {
+                              const stats = getPersediaanStats(p.id);
+                              return (
+                                <tr key={p.id} className="hover:bg-gray-50">
+                                  <td className="p-2 border font-mono text-[10px]">{p.kode}</td>
+                                  <td className="p-2 border font-bold text-gray-800">{p.nama}</td>
+                                  
+                                  <td className="p-2 border text-center">{stats.awal} {p.satuan}</td>
+                                  <td className="p-2 border text-right font-mono text-[10px]">{formatRupiah(stats.harga)}</td>
+                                  <td className="p-2 border text-right font-mono text-[10px]">{formatRupiah(stats.awal * stats.harga)}</td>
+                                  
+                                  <td className="p-2 border text-center text-green-700 font-medium">{stats.masuk} {p.satuan}</td>
+                                  <td className="p-2 border text-right font-mono text-[10px]">{formatRupiah(stats.harga)}</td>
+                                  <td className="p-2 border text-right font-mono text-[10px] text-green-700">{formatRupiah(stats.totalMasukRp > 0 ? stats.totalMasukRp : stats.masuk * stats.harga)}</td>
+                                  
+                                  <td className="p-2 border text-center text-red-600 font-medium">{stats.keluar} {p.satuan}</td>
+                                  <td className="p-2 border text-right font-mono text-[10px]">{formatRupiah(stats.harga)}</td>
+                                  <td className="p-2 border text-right font-mono text-[10px] text-red-600">{formatRupiah(stats.keluar * stats.harga)}</td>
+                                  
+                                  <td className="p-2 border text-center font-bold">{stats.akhir} {p.satuan}</td>
+                                  <td className="p-2 border text-right font-mono text-[10px]">{formatRupiah(stats.harga)}</td>
+                                  <td className="p-2 border text-right font-bold text-blue-700 font-mono text-[10px]">{formatRupiah(stats.akhir * stats.harga)}</td>
+                                  
+                                  <td className="p-2 border text-center print-hide">
+                                    <div className="flex justify-center gap-1">
+                                      <button className="text-blue-600 p-1 hover:bg-blue-50 rounded" onClick={() => { setPersediaanData(p); setModalType('persediaan_form'); }}><Edit3 size={14}/></button>
+                                      <button className="text-red-500 p-1 hover:bg-red-50 rounded" onClick={() => askConfirm("Hapus barang persediaan ini secara permanen?", () => deleteFromDb('persediaan', p.id))}><Trash2 size={14}/></button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                    {/* TAB: BUKU PENERIMAAN */}
+                    {persediaanTab === 'Buku Penerimaan' && (
+                      <div>
+                        <div className="text-center mb-6 hidden print:block">
+                          <h2 className="font-bold text-lg underline uppercase">Buku Penerimaan Barang</h2>
+                          <p className="text-xs mt-1">TAHUN ANGGARAN {filterTahunPersediaan}</p>
+                        </div>
+                        <table id="persediaan-table-export" className="w-full text-left text-xs whitespace-nowrap border-collapse border border-gray-200">
+                          <thead className="bg-gray-50 text-gray-600 font-bold">
+                            <tr>
+                              <th rowSpan="2" className="p-2 border text-center">No.</th>
+                              <th rowSpan="2" className="p-2 border">Tgl Diterima</th>
+                              <th rowSpan="2" className="p-2 border text-center">Dari (LS/GU)</th>
+                              <th colSpan="2" className="p-2 border text-center">Dokumen</th>
+                              <th rowSpan="2" className="p-2 border text-center">Jml</th>
+                              <th rowSpan="2" className="p-2 border">Nama Barang</th>
+                              <th rowSpan="2" className="p-2 border text-right">Harga Satuan</th>
+                              <th rowSpan="2" className="p-2 border text-right">PPN (%)</th>
+                              <th rowSpan="2" className="p-2 border text-right">Harga PPN (Rp)</th>
+                              <th rowSpan="2" className="p-2 border text-right">Total Harga</th>
+                              <th colSpan="2" className="p-2 border text-center">BA Penerimaan</th>
+                              <th rowSpan="2" className="p-2 border">Ket/PPTK</th>
+                              <th rowSpan="2" className="p-2 border text-center print-hide">Aksi</th>
+                            </tr>
+                            <tr>
+                              <th className="p-2 border font-normal">Nomor</th><th className="p-2 border font-normal">Tanggal</th>
+                              <th className="p-2 border font-normal">Nomor</th><th className="p-2 border font-normal">Tanggal</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {transaksiFiltered.filter(t => t.jenis === 'Penerimaan').sort((a,b) => new Date(a.tanggal) - new Date(b.tanggal)).map((t, idx) => {
+                              const brg = persediaan.find(p => p.id === t.idBarang) || {};
+                              return (
+                                <tr key={t.id} className="hover:bg-gray-50">
+                                  <td className="p-2 border text-center">{idx + 1}</td>
+                                  <td className="p-2 border">{formatTanggalIndo(t.tanggal)}</td>
+                                  <td className="p-2 border text-center font-bold">{t.sumber}</td>
+                                  <td className="p-2 border">{t.noDokumen || '-'}</td>
+                                  <td className="p-2 border">{t.tglDokumen ? formatTanggalIndo(t.tglDokumen) : '-'}</td>
+                                  <td className="p-2 border text-center font-bold text-green-700">{t.jumlah} {brg.satuan}</td>
+                                  <td className="p-2 border font-bold">{brg.nama}</td>
+                                  <td className="p-2 border text-right font-mono">{formatRupiah(t.hargaSatuan)}</td>
+                                  <td className="p-2 border text-right font-mono text-gray-500">{t.persenPPN || 0}%</td>
+                                  <td className="p-2 border text-right font-mono">{formatRupiah(t.hargaPPN)}</td>
+                                  <td className="p-2 border text-right font-bold text-blue-700 font-mono">{formatRupiah(t.totalHarga)}</td>
+                                  <td className="p-2 border">{t.noBA || '-'}</td>
+                                  <td className="p-2 border">{t.tglBA ? formatTanggalIndo(t.tglBA) : '-'}</td>
+                                  <td className="p-2 border">{t.keterangan || '-'}</td>
+                                  <td className="p-2 border text-center print-hide">
+                                    <button className="text-red-500 p-1 hover:bg-red-50 rounded" onClick={() => askConfirm("Hapus transaksi masuk ini?", () => deleteFromDb('transaksi_persediaan', t.id))}><Trash2 size={14}/></button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                            {transaksiFiltered.filter(t => t.jenis === 'Penerimaan').length === 0 && <tr><td colSpan="15" className="p-4 text-center text-gray-400 italic">Belum ada riwayat penerimaan barang.</td></tr>}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                    {/* TAB: BUKU PENGELUARAN */}
+                    {persediaanTab === 'Buku Pengeluaran' && (
+                      <div>
+                        <div className="text-center mb-6 hidden print:block">
+                          <h2 className="font-bold text-lg underline uppercase">Buku Pengeluaran Barang</h2>
+                          <p className="text-xs mt-1">TAHUN ANGGARAN {filterTahunPersediaan}</p>
+                        </div>
+                        <table id="persediaan-table-export" className="w-full text-left text-xs whitespace-nowrap border-collapse border border-gray-200">
+                          <thead className="bg-gray-50 text-gray-600 font-bold">
+                            <tr>
+                              <th className="p-2 border text-center">No.</th>
+                              <th className="p-2 border">Tanggal Keluar</th>
+                              <th className="p-2 border">Nama Barang</th>
+                              <th className="p-2 border text-center">Jumlah Keluar</th>
+                              <th className="p-2 border text-right">Harga Satuan</th>
+                              <th className="p-2 border text-right">Total Harga</th>
+                              <th className="p-2 border">Untuk (Sub Bagian)</th>
+                              <th className="p-2 border">Keterangan</th>
+                              <th className="p-2 border text-center print-hide">Aksi</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {transaksiFiltered.filter(t => t.jenis === 'Pengeluaran').sort((a,b) => new Date(a.tanggal) - new Date(b.tanggal)).map((t, idx) => {
+                              const brg = persediaan.find(p => p.id === t.idBarang) || {};
+                              const harga = brg.hargaSatuan || 0;
+                              return (
+                                <tr key={t.id} className="hover:bg-gray-50">
+                                  <td className="p-2 border text-center">{idx + 1}</td>
+                                  <td className="p-2 border">{formatTanggalIndo(t.tanggal)}</td>
+                                  <td className="p-2 border font-bold">{brg.nama}</td>
+                                  <td className="p-2 border text-center font-bold text-red-600">{t.jumlah} {brg.satuan}</td>
+                                  <td className="p-2 border text-right font-mono">{formatRupiah(harga)}</td>
+                                  <td className="p-2 border text-right font-bold font-mono">{formatRupiah(t.jumlah * harga)}</td>
+                                  <td className="p-2 border">{t.untuk}</td>
+                                  <td className="p-2 border">{t.keterangan || '-'}</td>
+                                  <td className="p-2 border text-center print-hide">
+                                    <button className="text-red-500 p-1 hover:bg-red-50 rounded" onClick={() => askConfirm("Hapus transaksi keluar ini?", () => deleteFromDb('transaksi_persediaan', t.id))}><Trash2 size={14}/></button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                            {transaksiFiltered.filter(t => t.jenis === 'Pengeluaran').length === 0 && <tr><td colSpan="9" className="p-4 text-center text-gray-400 italic">Belum ada riwayat pengeluaran barang.</td></tr>}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                    {/* TAB: KARTU BARANG */}
+                    {persediaanTab === 'Kartu Barang' && (
+                      <div>
+                        <div className="mb-6 max-w-md print-hide">
+                          <Select 
+                            label="Pilih Barang untuk Dilihat Kartunya" 
+                            value={selectedKartuBarang} 
+                            onChange={setSelectedKartuBarang} 
+                            options={persediaanFiltered.map(p => ({value: p.id, label: `${p.kode} - ${p.nama}`}))} 
+                          />
+                        </div>
+                        
+                        {selectedKartuBarang ? (() => {
+                          const brg = persediaanFiltered.find(p => p.id === selectedKartuBarang);
+                          if(!brg) return <p className="text-gray-500 italic">Barang tidak ditemukan.</p>;
+                          
+                          const txs = transaksiFiltered.filter(t => t.idBarang === selectedKartuBarang).sort((a,b) => new Date(a.tanggal) - new Date(b.tanggal));
+                          let currentStock = parseInt(brg.saldoAwal || 0);
+                          
+                          return (
+                            <div className="border border-gray-200 rounded-lg p-6 bg-white">
+                               <div className="text-center mb-6">
+                                 <h2 className="font-bold text-lg underline uppercase">KARTU BARANG</h2>
+                                 <p className="text-xs mt-1">TAHUN ANGGARAN {filterTahunPersediaan}</p>
+                               </div>
+                               <div className="flex justify-between mb-4 text-sm font-medium border-b pb-4">
+                                 <div>
+                                    <p className="text-gray-500 text-xs">NAMA BARANG</p><p className="font-bold mb-2">{brg.nama}</p>
+                                    <p className="text-gray-500 text-xs">SATUAN</p><p className="font-bold">{brg.satuan}</p>
+                                 </div>
+                                 <div className="text-right">
+                                    <p className="text-gray-500 text-xs">KODE REKENING</p><p className="font-bold mb-2 font-mono">{brg.kode}</p>
+                                    <p className="text-gray-500 text-xs">SALDO AWAL KARTU</p><p className="font-bold">{brg.saldoAwal}</p>
+                                 </div>
+                               </div>
+                               <table id="persediaan-table-export" className="w-full text-left text-xs whitespace-nowrap border-collapse border border-gray-200">
+                                 <thead className="bg-gray-50 text-gray-700 font-bold">
+                                   <tr>
+                                     <th className="p-3 border text-center">No</th>
+                                     <th className="p-3 border">Tanggal</th>
+                                     <th className="p-3 border text-center text-green-600 bg-green-50">Masuk</th>
+                                     <th className="p-3 border text-center text-red-600 bg-red-50">Keluar</th>
+                                     <th className="p-3 border text-center text-blue-700 bg-blue-50">Sisa</th>
+                                     <th className="p-3 border">Keterangan Mutasi</th>
+                                   </tr>
+                                 </thead>
+                                 <tbody>
+                                   <tr className="bg-gray-100">
+                                     <td className="p-3 border text-center">-</td>
+                                     <td className="p-3 border italic text-gray-500">Saldo Awal Sistem</td>
+                                     <td className="p-3 border text-center">-</td>
+                                     <td className="p-3 border text-center">-</td>
+                                     <td className="p-3 border text-center font-bold text-blue-700">{currentStock}</td>
+                                     <td className="p-3 border text-gray-500">-</td>
+                                   </tr>
+                                   {txs.map((t, i) => {
+                                     const qty = parseInt(t.jumlah || 0);
+                                     if (t.jenis === 'Penerimaan') currentStock += qty;
+                                     if (t.jenis === 'Pengeluaran') currentStock -= qty;
+                                     return (
+                                       <tr key={t.id} className="hover:bg-gray-50">
+                                         <td className="p-3 border text-center">{i+1}</td>
+                                         <td className="p-3 border">{formatTanggalIndo(t.tanggal)}</td>
+                                         <td className="p-3 border text-center font-bold text-green-600">{t.jenis === 'Penerimaan' ? `+ ${qty}` : ''}</td>
+                                         <td className="p-3 border text-center font-bold text-red-600">{t.jenis === 'Pengeluaran' ? `- ${qty}` : ''}</td>
+                                         <td className="p-3 border text-center font-bold text-blue-700">{currentStock}</td>
+                                         <td className="p-3 border">{t.keterangan || (t.jenis === 'Pengeluaran' ? `Didistribusikan ke: ${t.untuk}` : `Sumber: ${t.sumber} ${t.noDokumen}`)}</td>
+                                       </tr>
+                                     );
+                                   })}
+                                   {txs.length === 0 && <tr><td colSpan="6" className="p-4 text-center text-gray-400 italic">Belum ada mutasi/transaksi untuk barang ini.</td></tr>}
+                                 </tbody>
+                               </table>
+                            </div>
+                          );
+                        })() : (
+                          <div className="p-12 text-center text-gray-400 border-2 border-dashed rounded-xl bg-gray-50">
+                            <FileText size={48} className="mx-auto mb-3 opacity-50" />
+                            <p>Silakan pilih barang pada dropdown di atas untuk melihat rincian Kartu Barang.</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* TAB: LAPORAN REKAPITULASI */}
+                    {persediaanTab === 'Laporan Rekapitulasi' && (() => {
+                      const groups = {};
+                      persediaanFiltered.forEach(p => {
+                        if (!groups[p.kode]) groups[p.kode] = { kode: p.kode, namaRekening: p.namaRekening, items: [] };
+                        groups[p.kode].items.push(p);
+                      });
+
+                      let grandTotalAwal = 0, grandTotalMasuk = 0, grandTotalKeluar = 0, grandTotalAkhir = 0;
+
+                      return (
+                        <div>
+                          <div className="text-center mb-6 hidden print:block">
+                            <h2 className="font-bold text-lg underline uppercase">Laporan Rekapitulasi Barang Persediaan</h2>
+                            <p className="text-xs mt-1">TAHUN ANGGARAN {filterTahunPersediaan}</p>
+                          </div>
+                          <table id="persediaan-table-export" className="w-full text-left text-xs whitespace-nowrap border-collapse border border-gray-200">
+                            <thead className="bg-gray-100 text-gray-700 font-bold">
+                              <tr>
+                                <th className="p-3 border text-center">NO</th>
+                                <th className="p-3 border">KODE REKENING / URAIAN BARANG</th>
+                                <th className="p-3 border text-right">SALDO AWAL (Rp)</th>
+                                <th className="p-3 border text-right text-green-700">MASUK (Rp)</th>
+                                <th className="p-3 border text-right text-red-700">KELUAR (Rp)</th>
+                                <th className="p-3 border text-right text-blue-700">SALDO AKHIR (Rp)</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {Object.keys(groups).length === 0 && <tr><td colSpan="6" className="p-4 text-center text-gray-400 italic">Belum ada data barang.</td></tr>}
+                              {Object.values(groups).map((g, idx) => {
+                                let totalAwal = 0, totalMasuk = 0, totalKeluar = 0, totalAkhir = 0;
+                                g.items.forEach(item => {
+                                  const stats = getPersediaanStats(item.id);
+                                  totalAwal += (stats.awal * stats.harga);
+                                  totalMasuk += (stats.totalMasukRp > 0 ? stats.totalMasukRp : stats.masuk * stats.harga);
+                                  totalKeluar += (stats.keluar * stats.harga);
+                                  totalAkhir += (stats.akhir * stats.harga);
+                                });
+                                
+                                grandTotalAwal += totalAwal; grandTotalMasuk += totalMasuk; grandTotalKeluar += totalKeluar; grandTotalAkhir += totalAkhir;
+                                
+                                return (
+                                  <React.Fragment key={g.kode}>
+                                    <tr className="bg-blue-50 font-bold text-blue-900 border-t-2 border-t-blue-200">
+                                      <td className="p-3 border text-center">{idx + 1}</td>
+                                      <td className="p-3 border">{g.kode} - <span className="uppercase">{g.namaRekening}</span></td>
+                                      <td className="p-3 border text-right font-mono">{formatRupiah(totalAwal)}</td>
+                                      <td className="p-3 border text-right font-mono">{formatRupiah(totalMasuk)}</td>
+                                      <td className="p-3 border text-right font-mono">{formatRupiah(totalKeluar)}</td>
+                                      <td className="p-3 border text-right font-mono text-blue-700">{formatRupiah(totalAkhir)}</td>
+                                    </tr>
+                                    {g.items.map(item => {
+                                       const stats = getPersediaanStats(item.id);
+                                       return (
+                                         <tr key={item.id} className="text-gray-600 hover:bg-gray-50">
+                                           <td className="p-2 border"></td>
+                                           <td className="p-2 border pl-8 flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-gray-400"></span> {item.nama}</td>
+                                           <td className="p-2 border text-right font-mono text-[10px]">{formatRupiah(stats.awal * stats.harga)}</td>
+                                           <td className="p-2 border text-right font-mono text-[10px]">{formatRupiah(stats.totalMasukRp > 0 ? stats.totalMasukRp : stats.masuk * stats.harga)}</td>
+                                           <td className="p-2 border text-right font-mono text-[10px]">{formatRupiah(stats.keluar * stats.harga)}</td>
+                                           <td className="p-2 border text-right font-mono text-[10px] font-bold">{formatRupiah(stats.akhir * stats.harga)}</td>
+                                         </tr>
+                                       )
+                                    })}
+                                  </React.Fragment>
+                                );
+                              })}
+                              {Object.keys(groups).length > 0 && (
+                                <tr className="bg-gray-800 text-white font-bold">
+                                  <td colSpan="2" className="p-4 border text-center uppercase tracking-wider">Jumlah Total Keseluruhan</td>
+                                  <td className="p-4 border text-right font-mono text-sm">{formatRupiah(grandTotalAwal)}</td>
+                                  <td className="p-4 border text-right font-mono text-sm text-green-300">{formatRupiah(grandTotalMasuk)}</td>
+                                  <td className="p-4 border text-right font-mono text-sm text-red-300">{formatRupiah(grandTotalKeluar)}</td>
+                                  <td className="p-4 border text-right font-mono text-sm text-blue-300">{formatRupiah(grandTotalAkhir)}</td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      );
+                    })()}
+
+                  </div>
                 </div>
               )}
 
@@ -1623,7 +2135,7 @@
                               <tbody>
                                 <tr>
                                   <td style={{ width: '50%', verticalAlign: 'bottom' }}>
-                                    <p style={{ marginBottom: '20px', marginTop: '0' }}>Yang Menerima,</p>
+                                    <p style={{ marginBottom: '60px', marginTop: '0' }}>Yang Menerima,</p>
                                     <div style={{ minHeight: '80px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '10px' }}>
                                       {adminForm.ttdPihak2 ? <img src={adminForm.ttdPihak2} style={{ height: '80px', objectFit: 'contain' }} /> : null}
                                     </div>
@@ -1631,7 +2143,7 @@
                                     <p style={{ marginTop: '2px' }}>NIP. {selectedPihak2.nip}</p>
                                   </td>
                                   <td style={{ width: '50%', verticalAlign: 'bottom' }}>
-                                    <p style={{ marginBottom: '20px', marginTop: '0' }}>Yang Menyerahkan,</p>
+                                    <p style={{ marginBottom: '60px', marginTop: '0' }}>Yang Menyerahkan,</p>
                                     <div style={{ minHeight: '80px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '10px' }}>
                                       {adminForm.ttdPihak1 ? <img src={adminForm.ttdPihak1} style={{ height: '80px', objectFit: 'contain' }} /> : null}
                                     </div>
