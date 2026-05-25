@@ -286,11 +286,15 @@
       const [loginData, setLoginData] = useState({ identifier: '', password: '' });
       const [signupData, setSignupData] = useState({ nama: '', nip: '', jabatan: '', email: '', password: '' });
       
-      const initialPegawaiState = { nama: '', jabatan: '', nip: '', status: 'PNS', penempatan: 'Bagian Prokopim' };
+      // TERINTEGRASI: Penambahan KTP dan Alamat
+      const initialPegawaiState = { nama: '', jabatan: '', nip: '', status: 'PNS', penempatan: 'Bagian Prokopim', ktp: '', alamat: '' };
       const [newPegawai, setNewPegawai] = useState(initialPegawaiState);
       
+      // TERINTEGRASI: Penambahan Kode Barang dan NIBAR
       const initialBarangState = { 
         tahun: new Date().getFullYear().toString(), 
+        kodeBarang: '',
+        nibar: '',
         nama: '', 
         merk: '', 
         nomorSeri: '', 
@@ -327,16 +331,14 @@
         jenisSurat: 'PAKTA', // Default
         tanggal: new Date().toISOString().split('T')[0],
         customLogo: '',
-        pihak1Id: '', 
-        pihak2Id: '', 
+        pihak1Id: '', // Pihak Pertama (Biasanya Yang Menyerahkan/Pengurus Barang)
+        pihak2Id: '', // Pihak Kedua (Yang Menerima)
         barangId: '', 
         kendaraanId: '',
         nomorSurat: '027/     /Prokopim/2026',
         referensiSurat: '',
-        kuasaPenggunaBarang: '', 
-        penggunaBarang: '', 
-        nipPenggunaBarang: '',
-        alamat: '',
+        kuasaPenggunaBarangId: '', // Terintegrasi dgn Pegawai
+        penggunaBarangId: '', // Terintegrasi dgn Pegawai
         bastNomor: '',
         bastTanggal: '',
         dokLainNama: '',
@@ -373,19 +375,23 @@
         return new Date(tgl).getFullYear();
       };
 
-      const getPegawaiObj = (id) => pegawai.find(p => p.id === id) || { nama: '..........................', nip: '..........................', jabatan: '..........................' };
+      const getPegawaiObj = (id) => pegawai.find(p => p.id === id) || { nama: '..........................', nip: '..........................', jabatan: '..........................', ktp: '', alamat: '' };
       const getBarangObj = (id) => barang.find(b => b.id === id) || { nama: '..........................', merk: '..........................', nomorSeri: '..........................', kondisi: '..........................' };
       const getKendaraanObj = (id) => kendaraan.find(k => k.id === id) || { namaKendaraan: '..........................', noKendaraan: '..........................', noRangka: '..........................', noMesin: '..........................', tahun: '..........................', jenis: 'Roda 4' };
 
-      // Helper Khusus Pakta Integritas & BAST (Auto-fill Aset)
+      // Helper Khusus Pakta Integritas & BAST (Auto-fill Aset berdasarkan Pegawai)
       const selectedPihak1 = getPegawaiObj(adminForm.pihak1Id);
       const selectedPihak2 = getPegawaiObj(adminForm.pihak2Id);
       
+      // Auto-detect barang: Pakta/Lampiran dari Pihak 1, BAST dari Pihak 2
       const targetPihak = adminForm.jenisSurat === 'LAMPIRAN_PAKTA' || adminForm.jenisSurat === 'PAKTA' ? selectedPihak1 : selectedPihak2;
 
       const heldKendaraan = kendaraan.filter(k => k.pemegang === targetPihak.nama || k.nip === targetPihak.nip);
       const heldBarang = barang.filter(b => b.peminjamNama === targetPihak.nama || b.peminjamNip === targetPihak.nip);
       const allHeldItems = [...heldKendaraan.map(k => ({...k, isKendaraan: true})), ...heldBarang.map(b => ({...b, isKendaraan: false}))];
+
+      const kuasaObj = getPegawaiObj(adminForm.kuasaPenggunaBarangId);
+      const penggunaObj = getPegawaiObj(adminForm.penggunaBarangId);
 
       // --- Firebase Init ---
       useEffect(() => {
@@ -557,7 +563,6 @@
         const payload = { ...adminForm, id, createdAt: new Date().toISOString() };
         await saveToDb('arsip_surat', id, payload);
         showToast("Dokumen berhasil disimpan ke Arsip!");
-        // Update adminForm to have the new ID so subsequent saves overwrite instead of duplicate
         setAdminForm(payload);
       };
 
@@ -595,6 +600,8 @@
                 const id = Date.now().toString() + Math.random().toString(36).substr(2, 5);
                 await saveToDb('barang', id, {
                   id, 
+                  kodeBarang: row['Kode Barang'] || '',
+                  nibar: row['NIBAR'] || row['Nomor Induk Barang'] || '',
                   nama: row['Nama Barang'] || '', 
                   merk: row['Merk/Type'] || '', 
                   nomorSeri: row['Nomor Seri'] || '',
@@ -614,7 +621,7 @@
       };
 
       const downloadTemplateExcelBarang = () => {
-        const ws = window.XLSX.utils.json_to_sheet([{"Nama Barang": "Laptop", "Merk/Type": "Asus", "Nomor Seri": "SN123", "Tahun": "2023", "Kondisi": "Baik", "Lokasi": "Gudang", "Status": "Baru"}]);
+        const ws = window.XLSX.utils.json_to_sheet([{"Kode Barang": "2.1.3.01.01", "NIBAR": "001", "Nama Barang": "Laptop", "Merk/Type": "Asus", "Nomor Seri": "SN123", "Tahun": "2023", "Kondisi": "Baik", "Lokasi": "Gudang", "Status": "Baru"}]);
         const wb = window.XLSX.utils.book_new(); window.XLSX.utils.book_append_sheet(wb, ws, "Template"); window.XLSX.writeFile(wb, "Template_Barang.xlsx");
       };
       
@@ -654,6 +661,7 @@
             <td className="px-3 py-2 text-xs">
               <p className="font-bold text-gray-800">{b.nama}</p>
               {b.nomorSeri && <p className="text-[10px] text-gray-500 font-mono mt-0.5">SN: {b.nomorSeri}</p>}
+              {(b.kodeBarang || b.nibar) && <p className="text-[10px] text-blue-600 font-mono mt-0.5">Kode: {b.kodeBarang || '-'} | NIBAR: {b.nibar || '-'}</p>}
             </td>
             <td className="px-3 py-2 text-center text-xs">{b.tahun}</td>
             <td className="px-3 py-2 text-xs"><span className={`px-2 py-1 rounded text-[10px] font-bold ${b.kondisi === 'Baik' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{b.kondisi}</span></td>
@@ -671,7 +679,7 @@
             <td className="px-3 py-2 print-hide text-xs">
               <div className="flex gap-1">
                 <button className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" onClick={() => { setBarangData(b); setModalType('barang'); }}><Edit3 size={14} /></button>
-                <button className="p-1.5 text-red-500 hover:bg-red-50 rounded" onClick={() => { if(window.confirm('Yakin menghapus aset ini?')) deleteFromDb('barang', b.id); }}><Trash2 size={14} /></button>
+                <button className="p-1.5 text-red-500 hover:bg-red-50 rounded" onClick={() => askConfirm("Yakin menghapus aset ini?", () => deleteFromDb('barang', b.id))}><Trash2 size={14} /></button>
               </div>
             </td>
           </tr>
@@ -781,7 +789,11 @@
             <form onSubmit={handleSavePegawai}>
               <Input label="Nama Lengkap" value={newPegawai.nama} onChange={(val) => setNewPegawai({...newPegawai, nama: val})} required />
               <Input label="Jabatan" value={newPegawai.jabatan} onChange={(val) => setNewPegawai({...newPegawai, jabatan: val})} required />
-              <Input label="NIP" value={newPegawai.nip} onChange={(val) => setNewPegawai({...newPegawai, nip: val})} required />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Input label="NIP" value={newPegawai.nip} onChange={(val) => setNewPegawai({...newPegawai, nip: val})} required />
+                <Input label="Nomor KTP" value={newPegawai.ktp || ''} onChange={(val) => setNewPegawai({...newPegawai, ktp: val})} />
+              </div>
+              <Input label="Alamat Lengkap" value={newPegawai.alamat || ''} onChange={(val) => setNewPegawai({...newPegawai, alamat: val})} />
               <Select label="Status" value={newPegawai.status} onChange={(val) => setNewPegawai({...newPegawai, status: val})} options={['PNS', 'PPPK', 'PPPK PW', 'Outsourcing']} required />
               <Select label="Penempatan" value={newPegawai.penempatan} onChange={(val) => setNewPegawai({...newPegawai, penempatan: val})} options={['Bagian Prokopim', 'Sub Bagian Protokol', 'Sub Bagian Komunikasi Pimpinan', 'Sub Bagian Dokumentasi Pimpinan']} required />
               <Button type="submit" className="w-full mt-4">Simpan Data Pegawai</Button>
@@ -792,6 +804,12 @@
             <form onSubmit={handleSaveBarang}>
               <div className="mb-4"><label className="block text-sm font-semibold text-gray-700 mb-1.5">Foto Barang (Opsional)</label><input type="file" accept="image/*" onChange={(e) => handleImageCompress(e.target.files[0], (url) => setBarangData({...barangData, foto: url}))} className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white text-sm" /></div>
               <Input label="Nama Barang" value={barangData.nama} onChange={(val) => setBarangData({...barangData, nama: val})} required />
+              
+              <div className="grid grid-cols-2 gap-4">
+                <Input label="Kode Barang" value={barangData.kodeBarang || ''} onChange={(val) => setBarangData({...barangData, kodeBarang: val})} placeholder="Cth: 2.1.3.01.01" />
+                <Input label="NIBAR (Nomor Induk Barang)" value={barangData.nibar || ''} onChange={(val) => setBarangData({...barangData, nibar: val})} placeholder="Cth: 001.2023" />
+              </div>
+
               <div className="grid grid-cols-2 gap-4"><Input label="Merk/Type" value={barangData.merk} onChange={(val) => setBarangData({...barangData, merk: val})} placeholder="Cth: Asus Vivobook" /><Input label="Nomor Seri (SN) - Opsional" value={barangData.nomorSeri} onChange={(val) => setBarangData({...barangData, nomorSeri: val})} placeholder="Cth: SN-12345" /></div>
               <div className="grid grid-cols-2 gap-4"><Input label="Tahun Perolehan" type="number" value={barangData.tahun} onChange={(val) => setBarangData({...barangData, tahun: val})} required /><Select label="Kondisi" value={barangData.kondisi} onChange={(val) => setBarangData({...barangData, kondisi: val})} options={['Baik', 'Rusak Ringan', 'Rusak Berat']} required /></div>
               <div className="grid grid-cols-2 gap-4">
@@ -962,9 +980,9 @@
                         <tr>
                           <th className="px-4 py-3">Nama</th>
                           <th className="px-4 py-3">NIP</th>
+                          <th className="px-4 py-3">No. KTP</th>
                           <th className="px-4 py-3">Jabatan</th>
-                          <th className="px-4 py-3">Status</th>
-                          <th className="px-4 py-3">Penempatan</th>
+                          <th className="px-4 py-3">Alamat</th>
                           <th className="px-4 py-3 print-hide">Aksi</th>
                         </tr>
                       </thead>
@@ -973,13 +991,13 @@
                           <tr key={p.id} className="hover:bg-gray-50">
                             <td className="px-4 py-3 font-bold text-gray-800">{p.nama}</td>
                             <td className="px-4 py-3 font-mono text-gray-600">{p.nip}</td>
+                            <td className="px-4 py-3 font-mono text-gray-600">{p.ktp || '-'}</td>
                             <td className="px-4 py-3">{p.jabatan}</td>
-                            <td className="px-4 py-3">{p.status}</td>
-                            <td className="px-4 py-3 text-gray-600">{p.penempatan}</td>
+                            <td className="px-4 py-3 text-gray-600 max-w-[200px] truncate" title={p.alamat}>{p.alamat || '-'}</td>
                             <td className="px-4 py-3 print-hide">
                               <div className="flex gap-1">
                                 <button className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" onClick={() => { setNewPegawai(p); setModalType('pegawai'); }}><Edit3 size={14}/></button>
-                                <button className="p-1.5 text-red-500 hover:bg-red-50 rounded" onClick={() => { if(window.confirm("Yakin ingin menghapus pegawai ini?")) deleteFromDb('pegawai', p.id); }}><Trash2 size={14}/></button>
+                                <button className="p-1.5 text-red-500 hover:bg-red-50 rounded" onClick={() => askConfirm("Hapus pegawai ini?", () => deleteFromDb('pegawai', p.id))}><Trash2 size={14}/></button>
                               </div>
                             </td>
                           </tr>
@@ -1015,7 +1033,7 @@
 
               {view === 'ruangan' && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {ruangan.map(r => (<div key={r.id} className="bg-white rounded-xl border overflow-hidden shadow-sm flex flex-col"><div className="relative p-6 text-white min-h-[120px] flex items-center"><div className="absolute inset-0 z-0">{r.foto ? <><img src={r.foto} className="w-full h-full object-cover"/><div className="absolute inset-0 bg-black/60"></div></> : <div className="w-full h-full bg-blue-600"></div>}</div><div className="relative z-10"><h4 className="font-bold text-lg">{r.nama}</h4></div></div><div className="p-6 flex-1"><table className="w-full text-sm text-left"><thead className="text-gray-500 border-b border-dashed"><tr><th className="py-1">Barang</th><th className="py-1 text-center">Jml</th><th className="py-1 text-right">Kondisi</th></tr></thead><tbody>{r.items?.map(i => <tr key={i.id} className="border-b border-gray-50"><td className="py-2">{i.nama}</td><td className="py-2 text-center">{i.jumlah}</td><td className="py-2 text-right">{i.kondisi}</td></tr>)}</tbody></table></div><div className="px-6 py-4 bg-gray-50 border-t flex gap-2 print-hide"><button onClick={() => { setRuanganData(r); setModalType('ruangan'); }} className="flex-1 py-2 bg-white border text-blue-600 rounded flex items-center justify-center gap-2"><Edit3 size={16}/> Edit</button><button onClick={() => { if(window.confirm('Hapus seluruh ruangan ini?')) deleteFromDb('ruangan', r.id); }} className="flex-1 py-2 bg-white border text-red-600 rounded flex items-center justify-center gap-2"><Trash2 size={16}/> Hapus</button></div></div>))}
+                  {ruangan.map(r => (<div key={r.id} className="bg-white rounded-xl border overflow-hidden shadow-sm flex flex-col"><div className="relative p-6 text-white min-h-[120px] flex items-center"><div className="absolute inset-0 z-0">{r.foto ? <><img src={r.foto} className="w-full h-full object-cover"/><div className="absolute inset-0 bg-black/60"></div></> : <div className="w-full h-full bg-blue-600"></div>}</div><div className="relative z-10"><h4 className="font-bold text-lg">{r.nama}</h4></div></div><div className="p-6 flex-1"><table className="w-full text-sm text-left"><thead className="text-gray-500 border-b border-dashed"><tr><th className="py-1">Barang</th><th className="py-1 text-center">Jml</th><th className="py-1 text-right">Kondisi</th></tr></thead><tbody>{r.items?.map(i => <tr key={i.id} className="border-b border-gray-50"><td className="py-2">{i.nama}</td><td className="py-2 text-center">{i.jumlah}</td><td className="py-2 text-right">{i.kondisi}</td></tr>)}</tbody></table></div><div className="px-6 py-4 bg-gray-50 border-t flex gap-2 print-hide"><button onClick={() => { setRuanganData(r); setModalType('ruangan'); }} className="flex-1 py-2 bg-white border text-blue-600 rounded flex items-center justify-center gap-2"><Edit3 size={16}/> Edit</button><button onClick={() => askConfirm('Hapus seluruh ruangan ini?', () => deleteFromDb('ruangan', r.id))} className="flex-1 py-2 bg-white border text-red-600 rounded flex items-center justify-center gap-2"><Trash2 size={16}/> Hapus</button></div></div>))}
                   <div onClick={() => { setRuanganData({id:null, nama:'', foto:'', items:[]}); setModalType('ruangan'); }} className="border-2 border-dashed border-gray-300 rounded-xl flex items-center justify-center p-12 hover:bg-blue-50 cursor-pointer text-center print-hide"><Plus className="mx-auto text-gray-400 mb-2" size={32}/><p className="font-medium text-gray-500">Tambah Ruangan</p></div>
                 </div>
               )}
@@ -1023,14 +1041,14 @@
               {view === 'kendaraan' && (
                 <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                   <div className="p-6 border-b flex justify-between print-hide"><h3 className="font-bold text-lg">Kendaraan Dinas</h3><Button onClick={() => { setKendaraanData(initialKendaraanState); setModalType('kendaraan'); }}><Plus size={18}/> Tambah</Button></div>
-                  <div className="overflow-x-auto"><table className="w-full text-left whitespace-nowrap text-xs"><thead className="bg-gray-50 text-gray-500 uppercase text-[10px] font-bold border-b"><tr><th className="px-4 py-3">Kendaraan</th><th className="px-4 py-3">No. Polisi / Detail</th><th className="px-4 py-3">Pemegang</th><th className="px-4 py-3">Jenis</th><th className="px-4 py-3">Tgl Pajak</th><th className="px-4 py-3 print-hide">Aksi</th></tr></thead><tbody className="divide-y divide-gray-100">{kendaraan.map(k => (<tr key={k.id} className="hover:bg-gray-50"><td className="px-4 py-3"><p className="font-bold text-gray-800">{k.namaKendaraan}</p><p className="text-[10px] text-gray-500">Tahun: {k.tahun}</p></td><td className="px-4 py-3"><span className="font-mono font-bold text-blue-700 bg-blue-50 px-2 py-1 rounded">{k.noKendaraan}</span><div className="mt-1 text-[10px] text-gray-500"><p>Rangka: {k.noRangka || '-'}</p><p>Mesin: {k.noMesin || '-'}</p></div></td><td className="px-4 py-3"><p className="font-medium text-gray-800">{k.pemegang}</p><p className="text-[10px] text-gray-500 font-mono">{k.nip}</p></td><td className="px-4 py-3 text-gray-600">{k.jenis}</td><td className="px-4 py-3 font-mono text-gray-600">{k.tanggalPajak ? new Date(k.tanggalPajak).toLocaleDateString('id-ID', {day:'2-digit', month:'long', year:'numeric'}) : '-'}</td><td className="px-4 py-3 print-hide"><div className="flex gap-1"><button className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" onClick={() => { setKendaraanData(k); setModalType('kendaraan'); }}><Edit3 size={14}/></button><button className="p-1.5 text-red-500 hover:bg-red-50 rounded" onClick={() => { if(window.confirm('Hapus kendaraan ini?')) deleteFromDb('kendaraan', k.id); }}><Trash2 size={14}/></button></div></td></tr>))}</tbody></table></div>
+                  <div className="overflow-x-auto"><table className="w-full text-left whitespace-nowrap text-xs"><thead className="bg-gray-50 text-gray-500 uppercase text-[10px] font-bold border-b"><tr><th className="px-4 py-3">Kendaraan</th><th className="px-4 py-3">No. Polisi / Detail</th><th className="px-4 py-3">Pemegang</th><th className="px-4 py-3">Jenis</th><th className="px-4 py-3">Tgl Pajak</th><th className="px-4 py-3 print-hide">Aksi</th></tr></thead><tbody className="divide-y divide-gray-100">{kendaraan.map(k => (<tr key={k.id} className="hover:bg-gray-50"><td className="px-4 py-3"><p className="font-bold text-gray-800">{k.namaKendaraan}</p><p className="text-[10px] text-gray-500">Tahun: {k.tahun}</p></td><td className="px-4 py-3"><span className="font-mono font-bold text-blue-700 bg-blue-50 px-2 py-1 rounded">{k.noKendaraan}</span><div className="mt-1 text-[10px] text-gray-500"><p>Rangka: {k.noRangka || '-'}</p><p>Mesin: {k.noMesin || '-'}</p></div></td><td className="px-4 py-3"><p className="font-medium text-gray-800">{k.pemegang}</p><p className="text-[10px] text-gray-500 font-mono">{k.nip}</p></td><td className="px-4 py-3 text-gray-600">{k.jenis}</td><td className="px-4 py-3 font-mono text-gray-600">{k.tanggalPajak ? new Date(k.tanggalPajak).toLocaleDateString('id-ID', {day:'2-digit', month:'long', year:'numeric'}) : '-'}</td><td className="px-4 py-3 print-hide"><div className="flex gap-1"><button className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" onClick={() => { setKendaraanData(k); setModalType('kendaraan'); }}><Edit3 size={14}/></button><button className="p-1.5 text-red-500 hover:bg-red-50 rounded" onClick={() => askConfirm("Hapus kendaraan ini?", () => deleteFromDb('kendaraan', k.id))}><Trash2 size={14}/></button></div></td></tr>))}</tbody></table></div>
                 </div>
               )}
 
               {view === 'persediaan' && (
                 <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                   <div className="p-6 border-b flex justify-between print-hide"><h3 className="font-bold text-lg">Kartu Persediaan</h3><div className="flex gap-2"><Button variant="secondary" onClick={() => { setStokData({idBarang:'', jenisTransaksi:'Penambahan', jumlah:1}); setModalType('stok'); }}>Update Stok</Button><Button onClick={() => { setPersediaanData(initialPersediaanState); setModalType('persediaan_form'); }}>Tambah Barang</Button></div></div>
-                  <div className="overflow-x-auto"><table className="w-full text-left text-xs whitespace-nowrap"><thead className="bg-gray-50 text-gray-500 uppercase font-bold border-b text-[10px]"><tr><th className="px-3 py-2 text-center border-r">Kode</th><th className="px-3 py-2">Barang</th><th className="px-3 py-2 text-center">Saldo Awal</th><th className="px-3 py-2 text-center text-green-600">Tambah</th><th className="px-3 py-2 text-center text-red-600">Keluar</th><th className="px-3 py-2 text-center">Saldo Akhir</th><th className="px-3 py-2 print-hide">Aksi</th></tr></thead><tbody className="divide-y divide-gray-100">{persediaan.map(p => { const saldo = p.saldoAwal + p.penambahan - p.pengeluaran; return (<tr key={p.id} className="hover:bg-gray-50"><td className="px-3 py-2 text-center font-mono text-[10px] border-r">{p.kode}</td><td className="px-3 py-2"><p className="font-bold text-gray-800">{p.nama}</p><p className="text-[10px] text-gray-500">{p.satuan}</p></td><td className="px-3 py-2 text-center">{p.saldoAwal}</td><td className="px-3 py-2 text-center font-bold text-green-600">{p.penambahan}</td><td className="px-3 py-2 text-center font-bold text-red-600">{p.pengeluaran}</td><td className="px-3 py-2 text-center font-bold bg-gray-50">{saldo}</td><td className="px-3 py-2 print-hide"><div className="flex justify-center gap-1"><button className="text-blue-600 p-1.5 hover:bg-blue-50 rounded" onClick={() => { setPersediaanData(p); setModalType('persediaan_form'); }}><Edit3 size={14}/></button><button className="text-red-500 p-1.5 hover:bg-red-50 rounded" onClick={() => { if(window.confirm('Hapus persediaan ini?')) deleteFromDb('persediaan', p.id); }}><Trash2 size={14}/></button></div></td></tr>)})}</tbody></table></div>
+                  <div className="overflow-x-auto"><table className="w-full text-left text-xs whitespace-nowrap"><thead className="bg-gray-50 text-gray-500 uppercase font-bold border-b text-[10px]"><tr><th className="px-3 py-2 text-center border-r">Kode</th><th className="px-3 py-2">Barang</th><th className="px-3 py-2 text-center">Saldo Awal</th><th className="px-3 py-2 text-center text-green-600">Tambah</th><th className="px-3 py-2 text-center text-red-600">Keluar</th><th className="px-3 py-2 text-center">Saldo Akhir</th><th className="px-3 py-2 print-hide">Aksi</th></tr></thead><tbody className="divide-y divide-gray-100">{persediaan.map(p => { const saldo = p.saldoAwal + p.penambahan - p.pengeluaran; return (<tr key={p.id} className="hover:bg-gray-50"><td className="px-3 py-2 text-center font-mono text-[10px] border-r">{p.kode}</td><td className="px-3 py-2"><p className="font-bold text-gray-800">{p.nama}</p><p className="text-[10px] text-gray-500">{p.satuan}</p></td><td className="px-3 py-2 text-center">{p.saldoAwal}</td><td className="px-3 py-2 text-center font-bold text-green-600">{p.penambahan}</td><td className="px-3 py-2 text-center font-bold text-red-600">{p.pengeluaran}</td><td className="px-3 py-2 text-center font-bold bg-gray-50">{saldo}</td><td className="px-3 py-2 print-hide"><div className="flex justify-center gap-1"><button className="text-blue-600 p-1.5 hover:bg-blue-50 rounded" onClick={() => { setPersediaanData(p); setModalType('persediaan_form'); }}><Edit3 size={14}/></button><button className="text-red-500 p-1.5 hover:bg-red-50 rounded" onClick={() => askConfirm("Hapus persediaan ini?", () => deleteFromDb('persediaan', p.id))}><Trash2 size={14}/></button></div></td></tr>)})}</tbody></table></div>
                 </div>
               )}
 
@@ -1066,7 +1084,7 @@
                               <td className="px-4 py-3 text-center print-hide">
                                 <div className="flex justify-center gap-2">
                                   <Button variant="outline" className="text-xs py-1 px-2 h-8" onClick={() => handleOpenArsip(arsip)}>Buka / Cetak</Button>
-                                  <Button variant="danger" className="text-xs py-1 px-2 h-8" onClick={() => { if(window.confirm('Yakin ingin menghapus arsip ini?')) deleteFromDb('arsip_surat', arsip.id); }}>Hapus</Button>
+                                  <Button variant="danger" className="text-xs py-1 px-2 h-8" onClick={() => askConfirm('Yakin ingin menghapus arsip ini?', () => deleteFromDb('arsip_surat', arsip.id))}>Hapus</Button>
                                 </div>
                               </td>
                             </tr>
@@ -1152,6 +1170,38 @@
                             options={[{value: '', label: '-- Tidak Ada / Kosong --'}, ...barang.map(b => ({value: b.id, label: `${b.nama} (${b.merk || '-'})`}))]} 
                           />
                         )}
+
+                        {/* Input Khusus Tabel Lampiran Pakta */}
+                        {adminForm.jenisSurat === 'LAMPIRAN_PAKTA' && (
+                          <div className="border-t pt-4 mt-2 space-y-3">
+                             <h4 className="text-sm font-bold text-gray-700 mb-2">Data Pengisian Lampiran</h4>
+                             <Select 
+                                label="Kuasa Pengguna Barang" 
+                                value={adminForm.kuasaPenggunaBarangId} 
+                                onChange={(v) => setAdminForm({...adminForm, kuasaPenggunaBarangId: v})} 
+                                options={[{value: '', label: '-- Pilih Pegawai --'}, ...pegawai.map(p => ({value: p.id, label: p.nama}))]} 
+                             />
+                             <Select 
+                                label="Pengguna Barang" 
+                                value={adminForm.penggunaBarangId} 
+                                onChange={(v) => setAdminForm({...adminForm, penggunaBarangId: v})} 
+                                options={[{value: '', label: '-- Pilih Pegawai --'}, ...pegawai.map(p => ({value: p.id, label: p.nama}))]} 
+                             />
+                             
+                             <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                               <p className="text-xs font-bold text-gray-600 mb-2">BAST Pemakaian (Dok. Sumber)</p>
+                               <Input label="Nomor BAST" placeholder="Nomor surat" value={adminForm.bastNomor} onChange={(v) => setAdminForm({...adminForm, bastNomor: v})} />
+                               <Input label="Tanggal BAST" type="date" value={adminForm.bastTanggal} onChange={(v) => setAdminForm({...adminForm, bastTanggal: v})} />
+                             </div>
+                             
+                             <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                               <p className="text-xs font-bold text-gray-600 mb-2">Dokumen Pendukung Lainnya</p>
+                               <Input label="Nama Dokumen" placeholder="Cth: Surat Jalan" value={adminForm.dokLainNama} onChange={(v) => setAdminForm({...adminForm, dokLainNama: v})} />
+                               <Input label="Nomor Dokumen" placeholder="Nomor dokumen" value={adminForm.dokLainNomor} onChange={(v) => setAdminForm({...adminForm, dokLainNomor: v})} />
+                               <Input label="Tanggal Dokumen" type="date" value={adminForm.dokLainTanggal} onChange={(v) => setAdminForm({...adminForm, dokLainTanggal: v})} />
+                             </div>
+                          </div>
+                        )}
                       </div>
 
                       {/* --- Tanda Tangan Digital UI --- */}
@@ -1186,6 +1236,7 @@
                           </Button>
                         </div>
                       </div>
+                      <p className="text-xs text-gray-500 mt-2 text-center">Gunakan "Save as PDF" di layar cetak.</p>
                     </div>
                   </div>
 
@@ -1306,8 +1357,8 @@
                              <h3 style={{ textAlign: 'center', fontWeight: 'bold', fontSize: '12pt', marginBottom: '20px' }}>TAHUN {formatTahunIndo(adminForm.tanggal)}</h3>
                              
                              <div style={{ marginBottom: '15px' }}>
-                               <p>Kuasa Pengguna Barang &nbsp;&nbsp;&nbsp;: {adminForm.kuasaPenggunaBarang || '......................................................'}</p>
-                               <p>Pengguna Barang &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: {adminForm.penggunaBarang || '......................................................'}</p>
+                               <p>Kuasa Pengguna Barang &nbsp;&nbsp;&nbsp;: {adminForm.kuasaPenggunaBarangId ? kuasaObj.nama : '......................................................'}</p>
+                               <p>Pengguna Barang &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: {adminForm.penggunaBarangId ? penggunaObj.nama : '......................................................'}</p>
                              </div>
 
                              <table border="1" style={{ width: '100%', borderCollapse: 'collapse', borderColor: 'black', fontSize: '8pt', textAlign: 'center' }}>
@@ -1341,16 +1392,16 @@
                                   {allHeldItems.length > 0 ? allHeldItems.map((item, idx) => (
                                     <tr key={idx}>
                                        <td style={{ padding: '4px' }}>{idx + 1}</td>
-                                       <td style={{ padding: '4px' }}>{item.isKendaraan ? '-' : (adminForm.nibar || '-')}</td>
-                                       <td style={{ padding: '4px' }}>{item.isKendaraan ? '-' : (adminForm.kodeBarang || '-')}</td>
+                                       <td style={{ padding: '4px' }}>{item.isKendaraan ? '-' : (item.nibar || '-')}</td>
+                                       <td style={{ padding: '4px' }}>{item.isKendaraan ? '-' : (item.kodeBarang || '-')}</td>
                                        <td style={{ padding: '4px', textAlign: 'left' }}>{item.isKendaraan ? item.namaKendaraan : item.nama}</td>
                                        <td style={{ padding: '4px', textAlign: 'left' }}>{item.isKendaraan ? item.jenis : item.merk}</td>
-                                       <td style={{ padding: '4px' }}>{item.isKendaraan ? (adminForm.alamat || '-') : (item.lokasi || adminForm.alamat || '-')}</td>
+                                       <td style={{ padding: '4px' }}>{item.isKendaraan ? (selectedPihak1.alamat || '-') : (item.lokasi || selectedPihak1.alamat || '-')}</td>
                                        <td style={{ padding: '4px' }}>{selectedPihak1.nama}</td>
                                        <td style={{ padding: '4px' }}>{selectedPihak1.status}</td>
                                        <td style={{ padding: '4px' }}>{selectedPihak1.jabatan}</td>
-                                       <td style={{ padding: '4px' }}>-</td>
-                                       <td style={{ padding: '4px' }}>{adminForm.alamat || '-'}</td>
+                                       <td style={{ padding: '4px' }}>{selectedPihak1.ktp || '-'}</td>
+                                       <td style={{ padding: '4px' }}>{selectedPihak1.alamat || '-'}</td>
                                        <td style={{ padding: '4px' }}>{adminForm.bastNomor || '-'}</td>
                                        <td style={{ padding: '4px' }}>{adminForm.bastTanggal ? new Date(adminForm.bastTanggal).toLocaleDateString('id-ID') : '-'}</td>
                                        <td style={{ padding: '4px' }}>
@@ -1377,8 +1428,8 @@
                                       {adminForm.ttdPihak1 ? <img src={adminForm.ttdPihak1} style={{ height: '80px', objectFit: 'contain' }} /> : null}
                                     </div>
 
-                                    <strong style={{ textDecoration: 'underline' }}>{adminForm.penggunaBarang || '..............................................'}</strong>
-                                    <p style={{ marginTop: '5px' }}>NIP. {adminForm.nipPenggunaBarang || '........................................'}</p>
+                                    <strong style={{ textDecoration: 'underline' }}>{adminForm.penggunaBarangId ? penggunaObj.nama : '..............................................'}</strong>
+                                    <p style={{ marginTop: '5px' }}>NIP. {adminForm.penggunaBarangId ? penggunaObj.nip : '........................................'}</p>
                                   </td>
                                 </tr>
                               </tbody>
