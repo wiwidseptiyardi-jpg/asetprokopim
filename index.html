@@ -333,6 +333,7 @@
       const [assignBarangId, setAssignBarangId] = useState('');
       const [searchBarangAssign, setSearchBarangAssign] = useState('');
       const [searchBarang, setSearchBarang] = useState('');
+      const [filterJenisArsip, setFilterJenisArsip] = useState('');
       const fileInputRef = useRef(null);
 
       // --- Administrasi Form State ---
@@ -1632,10 +1633,31 @@
               )}
 
               {/* --- Menu Arsip Dokumen --- */}
-              {view === 'arsip' && (
+              {view === 'arsip' && (() => {
+                const filteredArsip = filterJenisArsip 
+                  ? arsipSurat.filter(a => a.jenisSurat === filterJenisArsip)
+                  : arsipSurat;
+
+                return (
                 <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                  <div className="p-6 border-b flex justify-between print-hide">
+                  <div className="p-6 border-b flex flex-col md:flex-row justify-between items-center gap-4 print-hide">
                     <h3 className="font-bold text-lg">Arsip Dokumen Administrasi</h3>
+                    <div className="flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-lg border">
+                      <Filter size={16} className="text-gray-400" />
+                      <select 
+                        value={filterJenisArsip} 
+                        onChange={(e) => setFilterJenisArsip(e.target.value)} 
+                        className="bg-transparent text-sm font-medium outline-none text-gray-600 cursor-pointer"
+                      >
+                        <option value="">Semua Jenis Dokumen</option>
+                        <option value="PAKTA">Pakta Integritas</option>
+                        <option value="LAMPIRAN_PAKTA">Lampiran Pakta</option>
+                        <option value="BAST_KENDARAAN">BAST Kendaraan</option>
+                        <option value="BAST_BMD">BAST BMD</option>
+                        <option value="PERMOHONAN">BA Permohonan</option>
+                        <option value="PENGEMBALIAN">BA Pengembalian</option>
+                      </select>
+                    </div>
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-left text-sm whitespace-nowrap">
@@ -1650,10 +1672,10 @@
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
-                        {arsipSurat.length === 0 ? (
+                        {filteredArsip.length === 0 ? (
                           <tr><td colSpan="6" className="text-center py-8 text-gray-400 italic">Belum ada dokumen yang diarsipkan.</td></tr>
                         ) : (
-                          arsipSurat.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map(arsip => (
+                          filteredArsip.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map(arsip => (
                             <tr key={arsip.id} className="hover:bg-gray-50">
                               <td className="px-4 py-3 font-mono text-xs">{new Date(arsip.createdAt).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute:'2-digit' })}</td>
                               <td className="px-4 py-3 font-bold text-blue-700">{arsip.jenisSurat.replace('_', ' ')}</td>
@@ -1673,7 +1695,8 @@
                     </table>
                   </div>
                 </div>
-              )}
+                );
+              })()}
 
               {/* --- Fitur Administrasi & Cetak Dokumen --- */}
               {view === 'administrasi' && (
@@ -2183,7 +2206,7 @@
                               <tbody>
                                 <tr>
                                   <td style={{ width: '50%', verticalAlign: 'bottom' }}>
-                                    <p style={{ marginBottom: '20px', marginTop: '0' }}>Yang Menerima,</p>
+                                    <p style={{ marginBottom: '60px', marginTop: '0' }}>Yang Menerima,</p>
                                     <div style={{ minHeight: '80px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '10px' }}>
                                       {adminForm.ttdPihak2 ? <img src={adminForm.ttdPihak2} style={{ height: '80px', objectFit: 'contain' }} /> : null}
                                     </div>
@@ -2191,7 +2214,7 @@
                                     <p style={{ marginTop: '2px' }}>NIP. {selectedPihak2.nip}</p>
                                   </td>
                                   <td style={{ width: '50%', verticalAlign: 'bottom' }}>
-                                    <p style={{ marginBottom: '20px', marginTop: '0' }}>Yang Menyerahkan,</p>
+                                    <p style={{ marginBottom: '60px', marginTop: '0' }}>Yang Menyerahkan,</p>
                                     <div style={{ minHeight: '80px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '10px' }}>
                                       {adminForm.ttdPihak1 ? <img src={adminForm.ttdPihak1} style={{ height: '80px', objectFit: 'contain' }} /> : null}
                                     </div>
